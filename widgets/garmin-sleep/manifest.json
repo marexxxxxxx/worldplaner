@@ -1,0 +1,25 @@
+{
+  "id": "garmin-sleep",
+  "name": "Schlaf",
+  "version": "1.0.0",
+  "author": "Marex Agent Developer",
+  "description": "Letzte Nacht aus GET /api/garmin/sleep: Gesamtschlafdauer, Ein-/Aufwachzeit, Sleep-Score und Schlafphasen (G.5 kind=sleep).",
+  "category": "health",
+  "icon": "icon.svg",
+  "permissions": ["garmin_cache"],
+  "config_schema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "sleep_target_h": {
+        "type": "number",
+        "default": 8,
+        "description": "Schlaf-Ziel in Stunden (Ziel-Linie der Kachel)."
+      }
+    }
+  },
+  "default_size": { "w": 4, "h": 3 },
+  "min_size": { "w": 3, "h": 3 },
+  "max_instances": 1,
+  "tags": ["garmin", "schlaf", "sleep", "health"]
+}

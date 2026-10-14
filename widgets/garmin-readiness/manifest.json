@@ -1,0 +1,27 @@
+{
+  "id": "garmin-readiness",
+  "name": "Readiness",
+  "version": "1.0.0",
+  "author": "Marex Agent Developer",
+  "description": "Readiness-Ersatz aus GET /api/garmin/readiness: Body Battery mit Tagesstreuung, Stress, Ruhepuls und Sleep-Score (G.5 kind=readiness, D11).",
+  "category": "health",
+  "icon": "icon.svg",
+  "permissions": ["garmin_cache"],
+  "config_schema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "body_battery_target": {
+        "type": "number",
+        "default": 50,
+        "minimum": 0,
+        "maximum": 100,
+        "description": "Body-Battery-Ziel (0–100) als Ziel-Linie der Kachel."
+      }
+    }
+  },
+  "default_size": { "w": 4, "h": 3 },
+  "min_size": { "w": 3, "h": 3 },
+  "max_instances": 1,
+  "tags": ["garmin", "readiness", "body-battery", "health"]
+}

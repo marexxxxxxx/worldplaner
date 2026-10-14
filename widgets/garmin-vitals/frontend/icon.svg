@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24" role="img" aria-label="Vitalwerte">
+  <path d="M12 20.5S4 15.2 4 9.6A4.1 4.1 0 0 1 12 7a4.1 4.1 0 0 1 8 2.6c0 5.6-8 10.9-8 10.9Z"
+        fill="#141414" stroke="#3b82f6" stroke-width="1.6" stroke-linejoin="round"/>
+  <path d="M5.5 12h3l1.5-3 2 5 1.5-2h5" fill="none" stroke="#60a5fa" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

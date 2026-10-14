@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24" role="img" aria-label="Workouts">
+  <circle cx="15.5" cy="6" r="2.1" fill="none" stroke="#3b82f6" stroke-width="1.5"/>
+  <path d="M13.7 8.4l-2.2 3.4-2.6.6M11.5 11.8l2.4 1.4.8 4.3M14 15.9l-3 2.6M11.5 11.8l-2.4.6-1.8 4.2"
+        fill="none" stroke="#60a5fa" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

@@ -14,11 +14,22 @@ import { WidgetRuntime } from "./widget-runtime.js";
  * Eingebaute Widgets dieses Repos und ihr Ziel-Tab. Der Backend-Registry-Eintrag
  * (`/api/widgets`) und `dashboard_layout` haben Vorrang; diese Liste ist die
  * Standardplatzierung, solange WP-2 die Manifeste noch nicht in die `widgets`-
- * Tabelle registriert (Abschnitt C der Spezifikation).
+ * Tabelle registriert (Abschnitt C der Spezifikation) — und sie füllt
+ * eingebaute Widgets nach, die auf einer bereits geseedeten Installation noch
+ * keine `dashboard_layout`-Zeile haben (siehe `resolveInstances`).
  */
+
+/** Polling-Intervalle der Cache-Widgets (Spezifikation I.4). */
+const POLL_WEATHER_MS = 10 * 60 * 1000;
+const POLL_GARMIN_MS = 5 * 60 * 1000;
+
 const BUILTIN_WIDGETS = [
-  // Wetter/ggf. Garmin sind Cache-Daten -> Polling (Wetter 10 min, Spec I.4).
-  { id: "weather", tab: "dashboard", pollMs: 600000 },
+  // Wetter und Garmin sind Cache-Daten -> Polling (Wetter 10 min, Garmin 5 min, I.4).
+  { id: "weather", tab: "dashboard", pollMs: POLL_WEATHER_MS },
+  { id: "garmin-sleep", tab: "dashboard", pollMs: POLL_GARMIN_MS },
+  { id: "garmin-readiness", tab: "dashboard", pollMs: POLL_GARMIN_MS },
+  { id: "garmin-vitals", tab: "dashboard", pollMs: POLL_GARMIN_MS },
+  { id: "garmin-workout", tab: "dashboard", pollMs: POLL_GARMIN_MS },
   { id: "hermes-todos", tab: "todos", pollMs: 0 },
 ];
 
@@ -267,7 +278,12 @@ class DashboardApp {
     }
   }
 
-  /** Layout aus dem Backend; sonst Standardplatzierung der eingebauten Widgets. */
+  /**
+   * Layout aus dem Backend; eingebaute Widgets, die (noch) keine Layout-Zeile
+   * haben, werden ergänzt. Der Backend-Seed legt Standardzeilen nur bei leerem
+   * `dashboard_layout` an (Abschnitt C) — auf einer bereits geseedeten
+   * Installation bleiben neu hinzugefügte eingebaute Widgets sonst unsichtbar.
+   */
   async resolveInstances(slug, registry) {
     let layout = [];
     try {
@@ -276,25 +292,23 @@ class DashboardApp {
       console.warn(`[app] /api/layout?tab=${slug} nicht erreichbar`, error);
     }
 
-    if (layout.length > 0) {
-      const resolved = [];
-      for (const instance of layout) {
-        if (!isWidgetEnabled(registry, instance.widget_id)) {
-          continue;
-        }
-        const descriptor = await this.resolveManifest(instance.widget_id);
-        if (!descriptor) {
-          continue;
-        }
-        resolved.push({ ...instance, ...descriptor, pollMs: this.pollMs(instance.widget_id) });
+    const resolved = [];
+    let y = 0;
+    for (const instance of layout) {
+      y = Math.max(y, (instance.y || 0) + (instance.h || 0));
+      if (!isWidgetEnabled(registry, instance.widget_id)) {
+        continue;
       }
-      return resolved;
+      const descriptor = await this.resolveManifest(instance.widget_id);
+      if (!descriptor) {
+        continue;
+      }
+      resolved.push({ ...instance, ...descriptor, pollMs: this.pollMs(instance.widget_id) });
     }
 
-    const fallback = [];
-    let y = 0;
+    const present = new Set(resolved.map((instance) => instance.widget_id));
     for (const def of BUILTIN_WIDGETS) {
-      if (def.tab !== slug || !isWidgetEnabled(registry, def.id)) {
+      if (def.tab !== slug || present.has(def.id) || !isWidgetEnabled(registry, def.id)) {
         continue;
       }
       const descriptor = await this.resolveManifest(def.id);
@@ -302,7 +316,7 @@ class DashboardApp {
         continue;
       }
       const size = descriptor.manifest.default_size;
-      fallback.push({
+      resolved.push({
         id: `builtin:${def.id}`,
         widget_id: def.id,
         x: 0,
@@ -316,7 +330,7 @@ class DashboardApp {
       });
       y += size.h;
     }
-    return fallback;
+    return resolved;
   }
 
   async resolveManifest(widgetId) {

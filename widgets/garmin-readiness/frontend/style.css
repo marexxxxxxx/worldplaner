@@ -1,0 +1,165 @@
+/* Garmin-Readiness — Widget-Styles, gescoped über .wg-garmin-readiness (E.1).
+   Body Battery als Magnitude (sequenzielle Blau-Familie), Ziel-Linie und
+   Marke zusätzlich per Position und Text; Bewertung immer als Glyphe UND Text
+   (I.2, graustufenfest). */
+
+.wg-garmin-readiness {
+  --gr-below: #fca5a5;
+  --gr-above: #7dd3fc;
+  height: 100%;
+  min-height: 0;
+  color: var(--text-primary, #f5f5f5);
+}
+
+.wg-garmin-readiness .gr {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  height: 100%;
+  min-height: 0;
+}
+
+.wg-garmin-readiness .gr-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.wg-garmin-readiness .gr-label {
+  color: var(--text-secondary, #a3a3a3);
+  font-size: 14px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.wg-garmin-readiness .gr-refresh {
+  display: grid;
+  place-items: center;
+  width: var(--tap-target, 44px);
+  height: var(--tap-target, 44px);
+  flex: 0 0 var(--tap-target, 44px);
+  border-radius: var(--radius-control, 12px);
+  border: 1px solid var(--line-strong, #242424);
+  background: var(--bg, #050505);
+  color: var(--text-secondary, #a3a3a3);
+  font-size: 20px;
+  line-height: 1;
+}
+
+.wg-garmin-readiness .gr-value {
+  margin: 0;
+  font-size: 44px;
+  font-weight: 600;
+  line-height: 1.05;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-primary, #f5f5f5);
+}
+
+.wg-garmin-readiness .gr-value__unit {
+  font-size: 18px;
+  font-weight: 500;
+  color: var(--text-secondary, #a3a3a3);
+}
+
+.wg-garmin-readiness .gr-value__unit[hidden] {
+  display: none;
+}
+
+.wg-garmin-readiness .gr-sub {
+  margin: 0;
+  font-size: 14px;
+  color: var(--text-secondary, #a3a3a3);
+}
+
+.wg-garmin-readiness .gr-bar {
+  position: relative;
+  height: 10px;
+  margin-top: 4px;
+  border-radius: 5px;
+  background: var(--line, #1c1c1c);
+}
+
+.wg-garmin-readiness .gr-bar[hidden] {
+  display: none;
+}
+
+/* Tagesstreuung low..high. */
+.wg-garmin-readiness .gr-range {
+  position: absolute;
+  top: 0;
+  height: 100%;
+  border-radius: 5px;
+  background: linear-gradient(90deg, #1e3a8a, #3b82f6 55%, #60a5fa);
+}
+
+/* Ziel-Linie. */
+.wg-garmin-readiness .gr-target-line {
+  position: absolute;
+  top: -3px;
+  width: 2px;
+  height: calc(100% + 6px);
+  background: var(--text-secondary, #a3a3a3);
+}
+
+/* Aktueller Wert. */
+.wg-garmin-readiness .gr-marker {
+  position: absolute;
+  top: 50%;
+  width: 12px;
+  height: 12px;
+  margin: -6px 0 0 -6px;
+  border-radius: 50%;
+  background: var(--text-primary, #f5f5f5);
+  border: 2px solid var(--bg, #050505);
+}
+
+.wg-garmin-readiness .gr-legend,
+.wg-garmin-readiness .gr-context {
+  margin: 0;
+  color: var(--text-secondary, #a3a3a3);
+  font-size: 12.5px;
+  line-height: 1.35;
+}
+
+.wg-garmin-readiness .gr-legend[hidden] {
+  display: none;
+}
+
+.wg-garmin-readiness .gr-target {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: auto 0 0;
+  padding-top: 6px;
+  border-top: 1px solid var(--line, #1c1c1c);
+  color: var(--text-secondary, #a3a3a3);
+  font-size: 13px;
+}
+
+.wg-garmin-readiness .gr-target__glyph {
+  font-size: 14px;
+}
+
+.wg-garmin-readiness .gr[data-band="below"] .gr-value__text,
+.wg-garmin-readiness .gr[data-band="below"] .gr-target__glyph {
+  color: var(--gr-below);
+}
+
+.wg-garmin-readiness .gr[data-band="above"] .gr-value__text,
+.wg-garmin-readiness .gr[data-band="above"] .gr-target__glyph {
+  color: var(--gr-above);
+}
+
+.wg-garmin-readiness .gr[data-band="within"] .gr-target__glyph {
+  color: var(--accent, #3b82f6);
+}
+
+.wg-garmin-readiness .gr[data-mode="empty"] .gr-value__text {
+  color: var(--text-secondary, #a3a3a3);
+}
+
+.wg-garmin-readiness .gr[data-mode="stale"] .gr-value,
+.wg-garmin-readiness .gr[data-mode="stale"] .gr-sub {
+  opacity: 0.7;
+}

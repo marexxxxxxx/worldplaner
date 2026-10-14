@@ -7,7 +7,8 @@ Hermes-To-Dos) für ein Dell-Tablet. Grundlage ist die build-reife Spezifikation
 Dieser Stand umfasst **K1 / WP-2** (Docker Compose, SQLite-Schema, FastAPI-Backend,
 Abschnitte B, C, D, H), **K4** (Betriebsartefakte, Abschnitt J),
 **K2 / WP-3 + WP-7** (Widget-Runtime und Hermes-To-Do-Tab, Abschnitte E, I),
-**WP-4** (Wetter-Widget, D.6/E) und
+**WP-4** (Wetter-Widget, D.6/E),
+**WP-6** (Garmin-Widgets Schlaf/Readiness/Workout/Vitalwerte, D.5/G.5/E) und
 **K3 / WP-8** (MCP-Server über Streamable HTTP, Abschnitt F).
 
 ## Umfang dieses Stands
@@ -21,13 +22,14 @@ Enthalten:
 - `frontend/` — App-Shell, Bento-Grid, Widget-Runtime, REST-Client
 - `widgets/hermes-todos/` — Hermes-To-Do-Widget
 - `widgets/weather/` — Wetter-Widget (WP-4)
+- `widgets/garmin-sleep/`, `widgets/garmin-readiness/`,
+  `widgets/garmin-workout/`, `widgets/garmin-vitals/` — Garmin-Widgets (WP-6)
 - `garmin-sync/` — periodischer Garmin-Abruf in `garmin_cache` (WP-5)
 - `mcp-server/` — MCP-Server über Streamable HTTP mit den 8 MVP-Tools (F)
 - `deploy/` — systemd-Units und Display-Skripte
 - `docs/setup.md` — Setup-Checkliste
 
-Noch **nicht** enthalten (eigene Work-Packages): Garmin-Widgets (WP-6),
-Widget-Verwaltung (WP-9).
+Noch **nicht** enthalten (eigenes Work-Package): Widget-Verwaltung (WP-9).
 
 ## Voraussetzungen
 
@@ -95,6 +97,10 @@ Das Backend liefert Frontend und Widgets unter derselben Origin aus (D10):
   inkl. `base_version`) und Live-Aktualisierung per SSE (WP-7).
 - `widgets/weather/` — Wetter-Kachel (`GET /api/weather/current`: Temperatur,
   Zustand, Stand, Wohlfühlbereich als Ziel), Polling alle 10 min (WP-4).
+- `widgets/garmin-{sleep,readiness,workout,vitals}/` — Garmin-Kacheln aus dem
+  Cache (`GET /api/garmin/*`: Schlafdauer+Score, Body Battery+Stress+Ruhepuls,
+  Workout-Liste, Schritte+Vitalwerte), jew. mit Ziel/Kontext, Polling alle
+  5 min (WP-6, D.5/G.5).
 
 ### Tests (Frontend)
 

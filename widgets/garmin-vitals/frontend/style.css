@@ -1,0 +1,124 @@
+/* Garmin-Vitalwerte — Widget-Styles, gescoped über .wg-garmin-vitals (E.1).
+   Schritte als Magnitude mit Fortschrittsbalken zum Ziel; die Bewertung trägt
+   zusätzlich Glyphe UND Text (I.2, graustufenfest). */
+
+.wg-garmin-vitals {
+  --gv-below: #fca5a5;
+  --gv-above: #7dd3fc;
+  height: 100%;
+  min-height: 0;
+  color: var(--text-primary, #f5f5f5);
+}
+
+.wg-garmin-vitals .gv {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  height: 100%;
+  min-height: 0;
+}
+
+.wg-garmin-vitals .gv-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.wg-garmin-vitals .gv-label {
+  color: var(--text-secondary, #a3a3a3);
+  font-size: 14px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.wg-garmin-vitals .gv-refresh {
+  display: grid;
+  place-items: center;
+  width: var(--tap-target, 44px);
+  height: var(--tap-target, 44px);
+  flex: 0 0 var(--tap-target, 44px);
+  border-radius: var(--radius-control, 12px);
+  border: 1px solid var(--line-strong, #242424);
+  background: var(--bg, #050505);
+  color: var(--text-secondary, #a3a3a3);
+  font-size: 20px;
+  line-height: 1;
+}
+
+.wg-garmin-vitals .gv-value {
+  margin: 0;
+  font-size: 44px;
+  font-weight: 600;
+  line-height: 1.05;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-primary, #f5f5f5);
+}
+
+.wg-garmin-vitals .gv-sub {
+  margin: 0;
+  font-size: 14px;
+  color: var(--text-secondary, #a3a3a3);
+}
+
+.wg-garmin-vitals .gv-bar {
+  position: relative;
+  height: 10px;
+  margin-top: 4px;
+  border-radius: 5px;
+  overflow: hidden;
+  background: var(--line, #1c1c1c);
+}
+
+.wg-garmin-vitals .gv-fill {
+  display: block;
+  height: 100%;
+  border-radius: 5px;
+  background: linear-gradient(90deg, #1e3a8a, #3b82f6 60%, #60a5fa);
+  transition: width 200ms ease;
+}
+
+.wg-garmin-vitals .gv-context {
+  margin: 0;
+  color: var(--text-secondary, #a3a3a3);
+  font-size: 12.5px;
+  line-height: 1.35;
+}
+
+.wg-garmin-vitals .gv-target {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: auto 0 0;
+  padding-top: 6px;
+  border-top: 1px solid var(--line, #1c1c1c);
+  color: var(--text-secondary, #a3a3a3);
+  font-size: 13px;
+}
+
+.wg-garmin-vitals .gv-target__glyph {
+  font-size: 14px;
+}
+
+.wg-garmin-vitals .gv[data-band="below"] .gv-value,
+.wg-garmin-vitals .gv[data-band="below"] .gv-target__glyph {
+  color: var(--gv-below);
+}
+
+.wg-garmin-vitals .gv[data-band="above"] .gv-value,
+.wg-garmin-vitals .gv[data-band="above"] .gv-target__glyph {
+  color: var(--gv-above);
+}
+
+.wg-garmin-vitals .gv[data-band="within"] .gv-target__glyph {
+  color: var(--accent, #3b82f6);
+}
+
+.wg-garmin-vitals .gv[data-mode="empty"] .gv-value {
+  color: var(--text-secondary, #a3a3a3);
+}
+
+.wg-garmin-vitals .gv[data-mode="stale"] .gv-value,
+.wg-garmin-vitals .gv[data-mode="stale"] .gv-sub {
+  opacity: 0.7;
+}

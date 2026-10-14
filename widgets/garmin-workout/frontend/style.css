@@ -1,0 +1,161 @@
+/* Garmin-Workouts — Widget-Styles, gescoped über .wg-garmin-workout (E.1).
+   Aktivitäten als Liste (Typ-Glyphe + Text), Wochenbewertung als Glyphe UND
+   Text (I.2, graustufenfest). Die Liste scrollt im Widget, damit der Rahmen
+   nicht springt (I.4). */
+
+.wg-garmin-workout {
+  --gw-below: #fca5a5;
+  --gw-above: #7dd3fc;
+  height: 100%;
+  min-height: 0;
+  color: var(--text-primary, #f5f5f5);
+}
+
+.wg-garmin-workout .gw {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  height: 100%;
+  min-height: 0;
+}
+
+.wg-garmin-workout .gw-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.wg-garmin-workout .gw-label {
+  color: var(--text-secondary, #a3a3a3);
+  font-size: 14px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.wg-garmin-workout .gw-refresh {
+  display: grid;
+  place-items: center;
+  width: var(--tap-target, 44px);
+  height: var(--tap-target, 44px);
+  flex: 0 0 var(--tap-target, 44px);
+  border-radius: var(--radius-control, 12px);
+  border: 1px solid var(--line-strong, #242424);
+  background: var(--bg, #050505);
+  color: var(--text-secondary, #a3a3a3);
+  font-size: 20px;
+  line-height: 1;
+}
+
+.wg-garmin-workout .gw-value {
+  margin: 0;
+  font-size: 40px;
+  font-weight: 600;
+  line-height: 1.05;
+  font-variant-numeric: tabular-nums;
+}
+
+.wg-garmin-workout .gw-sub {
+  margin: 0;
+  font-size: 14px;
+  color: var(--text-secondary, #a3a3a3);
+}
+
+.wg-garmin-workout .gw-list {
+  list-style: none;
+  margin: 6px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  overflow-y: auto;
+  min-height: 0;
+  flex: 1 1 auto;
+}
+
+.wg-garmin-workout .gw-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--line, #1c1c1c);
+}
+
+.wg-garmin-workout .gw-item:last-child {
+  border-bottom: none;
+}
+
+.wg-garmin-workout .gw-item__glyph {
+  font-size: 18px;
+  line-height: 1.2;
+}
+
+.wg-garmin-workout .gw-item__main {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.wg-garmin-workout .gw-item__title {
+  font-size: 15px;
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.wg-garmin-workout .gw-item__meta {
+  font-size: 12.5px;
+  color: var(--text-secondary, #a3a3a3);
+}
+
+.wg-garmin-workout .gw-empty {
+  list-style: none;
+  color: var(--text-secondary, #a3a3a3);
+  font-size: 13px;
+}
+
+.wg-garmin-workout .gw-context {
+  margin: 0;
+  color: var(--text-secondary, #a3a3a3);
+  font-size: 12.5px;
+}
+
+.wg-garmin-workout .gw-target {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: auto 0 0;
+  padding-top: 6px;
+  border-top: 1px solid var(--line, #1c1c1c);
+  color: var(--text-secondary, #a3a3a3);
+  font-size: 13px;
+}
+
+.wg-garmin-workout .gw-target__glyph {
+  font-size: 14px;
+}
+
+.wg-garmin-workout .gw[data-band="below"] .gw-value,
+.wg-garmin-workout .gw[data-band="below"] .gw-target__glyph {
+  color: var(--gw-below);
+}
+
+.wg-garmin-workout .gw[data-band="above"] .gw-value,
+.wg-garmin-workout .gw[data-band="above"] .gw-target__glyph {
+  color: var(--gw-above);
+}
+
+.wg-garmin-workout .gw[data-band="within"] .gw-target__glyph {
+  color: var(--accent, #3b82f6);
+}
+
+.wg-garmin-workout .gw[data-mode="empty"] .gw-value,
+.wg-garmin-workout .gw[data-mode="empty"] .gw-sub {
+  color: var(--text-secondary, #a3a3a3);
+}
+
+.wg-garmin-workout .gw[data-mode="stale"] .gw-value,
+.wg-garmin-workout .gw[data-mode="stale"] .gw-list {
+  opacity: 0.7;
+}

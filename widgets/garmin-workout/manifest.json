@@ -1,0 +1,33 @@
+{
+  "id": "garmin-workout",
+  "name": "Workouts",
+  "version": "1.0.0",
+  "author": "Marex Agent Developer",
+  "description": "Letzte Aktivitäten aus GET /api/garmin/workouts: Anzahl der letzten sieben Tage, Liste mit Typ, Dauer, Distanz, Kalorien und Puls (G.5 kind=workout).",
+  "category": "health",
+  "icon": "icon.svg",
+  "permissions": ["garmin_cache"],
+  "config_schema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "weekly_target": {
+        "type": "integer",
+        "default": 3,
+        "minimum": 1,
+        "description": "Wochenziel in Aktivitäten (Ziel-Linie der Kachel)."
+      },
+      "limit": {
+        "type": "integer",
+        "default": 10,
+        "minimum": 1,
+        "maximum": 50,
+        "description": "Anzahl der angezeigten Aktivitäten (D.5, max. 50)."
+      }
+    }
+  },
+  "default_size": { "w": 6, "h": 5 },
+  "min_size": { "w": 4, "h": 3 },
+  "max_instances": 1,
+  "tags": ["garmin", "workout", "aktivitäten", "health"]
+}
