@@ -5,24 +5,26 @@ Hermes-To-Dos) für ein Dell-Tablet. Grundlage ist die build-reife Spezifikation
 `spec` Rev 2 (Abschnitte A–L).
 
 Dieser Stand umfasst **K1 / WP-2** (Docker Compose, SQLite-Schema, FastAPI-Backend,
-Abschnitte B, C, D, H), **K4** (Betriebsartefakte, Abschnitt J) und
-**K2 / WP-3 + WP-7** (Widget-Runtime und Hermes-To-Do-Tab, Abschnitte E, I).
+Abschnitte B, C, D, H), **K4** (Betriebsartefakte, Abschnitt J),
+**K2 / WP-3 + WP-7** (Widget-Runtime und Hermes-To-Do-Tab, Abschnitte E, I) und
+**K3 / WP-8** (MCP-Server über Streamable HTTP, Abschnitt F).
 
 ## Umfang dieses Stands
 
 Enthalten:
 
-- `compose.yaml` — der `backend`-Service (liefert Frontend + Widgets aus, D10)
+- `compose.yaml` — die Services `backend` (liefert Frontend + Widgets aus, D10)
+  und `mcp-server` (Streamable HTTP, F)
 - `.env.example` — Env-Template
 - `backend/` — FastAPI-App, SQLite-Schema, REST-API, Tests
 - `frontend/` — App-Shell, Bento-Grid, Widget-Runtime, REST-Client
 - `widgets/hermes-todos/` — Hermes-To-Do-Widget
+- `mcp-server/` — MCP-Server über Streamable HTTP mit den 8 MVP-Tools (F)
 - `deploy/` — systemd-Units und Display-Skripte
 - `docs/setup.md` — Setup-Checkliste
 
 Noch **nicht** enthalten (eigene Work-Packages): Wetter-Widget (WP-4),
-Garmin-Widgets (WP-6), `garmin-sync/` (WP-5), `mcp-server/` (WP-8),
-Widget-Verwaltung (WP-9).
+Garmin-Widgets (WP-6), `garmin-sync/` (WP-5), Widget-Verwaltung (WP-9).
 
 ## Voraussetzungen
 
@@ -94,4 +96,40 @@ npm test        # Unit-Tests der Grid-Engine (node --test)
 
 # E2E gegen den laufenden Stack:
 BASE_URL=http://127.0.0.1:8000 CHROMIUM_PATH=/pfad/zu/chrome npm run test:e2e
+```
+
+## MCP-Server (K3 / WP-8, Spezifikation F)
+
+Der MCP-Server läuft über **Streamable HTTP**; einziger Endpunkt ist `POST /mcp`
+(`GET /mcp` für den Server-Stream), dazu `GET /healthz` für den Healthcheck.
+Er ist Teil von `docker compose` (Service `mcp-server`, Port `127.0.0.1:8001`).
+
+Die 8 Tools (Schemas wörtlich aus F.2):
+
+| Tool | Art |
+|---|---|
+| `dashboard_status` | read — Gesamtzustand |
+| `task_list` | read — max. 200 To-Dos |
+| `task_create` | write — legt To-Do an (`source=hermes`) |
+| `task_update` | write — überschreibt bedingungslos („Hermes gewinnt") |
+| `task_delete` | write — verlangt `confirm:true` |
+| `screen_off` / `screen_on` / `screen_dim` | write — `xset`/`xrandr` (J.2) |
+
+Verbindlich: Task-CRUD wird an die Backend-REST-API delegiert (D3) — der
+MCP-Server schreibt **nie** direkt in SQLite. Jede Antwort ist
+`{ok:true, …}` oder `{ok:false, error:{code,message,retryable}}`, niemals eine
+Exception. Bei fehlendem X11 liefern die Display-Tools `DISPLAY_UNAVAILABLE`.
+
+Sicherheit (F.1): DNS-Rebinding-Schutz mit Host-Allowlist, Token-Bucket-Rate-Limit
+(`MCP_RATE_LIMIT_PER_MINUTE`) und Cloudflare-Access-Prüfung des
+`Cf-Access-Jwt-Assertion` über `CF_ACCESS_AUD` + `CF_ACCESS_TEAM_DOMAIN`.
+`MCP_AUTH_MODE` steuert das: `auto` (prüfen, sobald konfiguriert — MVP-Default),
+`enforce` (erzwingen) oder `edge` (bewusst an den Edge delegieren).
+
+```bash
+# Tests
+cd mcp-server && pip install -e ".[dev]" && pytest
+
+# Rohbeleg/Inspector-Ersatz gegen einen laufenden Server:
+MCP_URL=http://127.0.0.1:8001/mcp python tests/inspect_client.py
 ```

@@ -1,0 +1,168 @@
+"""REST-Client zum Backend (Spezifikation D4/D).
+
+Der MCP-Server haelt **keine** Datenbankverbindung und schreibt **nie** direkt
+in SQLite; jeder Task-Zugriff geht ueber die REST-API (Entscheidung D3).
+Fehlermeldungen enthalten keine Geheimnisse (keine URLs mit Zugangsdaten,
+keine Tokens), sondern nur stabile Fehlercodes.
+"""
+
+from __future__ import annotations
+
+from typing import Any
+
+import httpx
+
+# Stabile Fehlercodes der Backend-API (D.0). Alles andere wird zu INTERNAL.
+_BACKEND_CODES = {"VALIDATION_ERROR", "NOT_FOUND", "CONFLICT", "FORBIDDEN", "INTERNAL"}
+
+
+class BackendError(Exception):
+    """Fehler aus dem Backend oder beim Transport dorthin.
+
+    ``code`` folgt den MCP-Fehlercodes (F.2); ``partial`` traegt einen
+    gemeldeten Teilstand (z. B. einen bereits angelegten Task).
+    """
+
+    def __init__(
+        self,
+        code: str,
+        message: str,
+        retryable: bool = False,
+        partial: dict[str, Any] | None = None,
+    ) -> None:
+        super().__init__(message)
+        self.code = code
+        self.message = message
+        self.retryable = retryable
+        self.partial = partial or {}
+
+
+class BackendClient:
+    def __init__(self, base_url: str, timeout: float = 10.0) -> None:
+        self._client = httpx.AsyncClient(base_url=base_url.rstrip("/"), timeout=timeout)
+
+    async def aclose(self) -> None:
+        await self._client.aclose()
+
+    # --- Transport ---------------------------------------------------------
+
+    async def _request(
+        self, method: str, url: str, *, allow_404: bool = False, **kwargs: Any
+    ) -> httpx.Response:
+        try:
+            response = await self._client.request(method, url, **kwargs)
+        except httpx.HTTPError:
+            raise BackendError(
+                "BACKEND_UNAVAILABLE", "Backend nicht erreichbar", retryable=True
+            ) from None
+        if response.status_code == 404 and allow_404:
+            return response
+        if response.status_code >= 500:
+            raise BackendError(
+                "BACKEND_UNAVAILABLE",
+                f"Backend meldet Fehler (HTTP {response.status_code})",
+                retryable=True,
+            )
+        if response.status_code >= 400:
+            raise self._backend_error(response)
+        return response
+
+    @staticmethod
+    def _backend_error(response: httpx.Response) -> BackendError:
+        code = "INTERNAL"
+        message = f"Backend lehnt Anfrage ab (HTTP {response.status_code})"
+        retryable = False
+        try:
+            error = (response.json() or {}).get("error") or {}
+            code = str(error.get("code") or code)
+            message = str(error.get("message") or message)
+            retryable = bool(error.get("retryable", False))
+        except ValueError:
+            pass
+        if code not in _BACKEND_CODES:
+            code = "INTERNAL"
+        return BackendError(code, message, retryable)
+
+    # --- Lesezugriffe ------------------------------------------------------
+
+    async def health(self) -> str:
+        """Liefert 'ok', 'degraded' oder 'unavailable' (D.1)."""
+        try:
+            response = await self._client.get("/api/health")
+        except httpx.HTTPError:
+            return "unavailable"
+        if response.status_code == 200:
+            try:
+                return "ok" if response.json().get("status") == "ok" else "degraded"
+            except ValueError:
+                return "degraded"
+        return "degraded"
+
+    async def get_config(self) -> dict[str, Any]:
+        return (await self._request("GET", "/api/config")).json()
+
+    async def get_state(self, key: str) -> Any | None:
+        """Dashboard-Zustand (D.7); ``None`` wenn der Key noch nicht gesetzt ist."""
+        response = await self._request("GET", f"/api/state/{key}", allow_404=True)
+        if response.status_code == 404:
+            return None
+        return (response.json() or {}).get("value")
+
+    async def list_tasks(self, status: str, limit: int) -> list[dict[str, Any]]:
+        response = await self._request(
+            "GET", "/api/tasks", params={"status": status, "limit": limit}
+        )
+        return response.json()
+
+    async def get_task(self, task_id: str) -> dict[str, Any] | None:
+        """Einzelnen Task holen (die API bietet nur die Liste, D.4)."""
+        for task in await self.list_tasks("all", 200):
+            if task.get("id") == task_id:
+                return task
+        return None
+
+    # --- Schreibzugriffe (ausschliesslich ueber REST, D3) ------------------
+
+    async def set_state(self, key: str, value: str) -> None:
+        await self._request("PUT", f"/api/state/{key}", json={"value": value})
+
+    async def create_task(
+        self,
+        *,
+        title: str,
+        description: str,
+        priority: str,
+        due_at: str | None,
+    ) -> dict[str, Any]:
+        payload: dict[str, Any] = {
+            "title": title,
+            "description": description,
+            "priority": priority,
+        }
+        if due_at is not None:
+            payload["due_at"] = due_at
+        created = (await self._request("POST", "/api/tasks", json=payload)).json()
+        # F.2 verlangt source="hermes", die eingefrorene D.4-Anlageroute setzt
+        # aber immer source="local". Der dokumentierte Hermes-Pfad ist der
+        # bedingungslose PATCH ohne base_version (D.4/D.9) — damit wird die
+        # Anlage nachgezogen, ohne das Backend zu aendern.
+        try:
+            flipped = (
+                await self._request("PATCH", f"/api/tasks/{created['id']}", json={})
+            ).json()
+        except BackendError as exc:
+            raise BackendError(
+                exc.code, exc.message, exc.retryable, partial={"task": created}
+            ) from None
+        return flipped
+
+    async def update_task(self, task_id: str, fields: dict[str, Any]) -> dict[str, Any]:
+        """Bedingungsloses Ueberschreiben ueber den Hermes-Pfad (D.4/D.9).
+
+        Bewusst ohne ``base_version``: MCP-Schreibzugriffe gewinnen immer.
+        """
+        response = await self._request("PATCH", f"/api/tasks/{task_id}", json=fields)
+        return response.json()
+
+    async def delete_task(self, task_id: str) -> None:
+        await self._request("DELETE", f"/api/tasks/{task_id}")
