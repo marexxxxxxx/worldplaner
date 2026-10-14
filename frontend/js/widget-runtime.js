@@ -11,6 +11,10 @@
  *    ein Platzhalter mit Widget-ID + Fehlercode gezeigt und der Poll dieses
  *    Widgets bis zur nächsten Config-Änderung gestoppt. Der Host stürzt nie ab.
  *  - Plugin-API `api` (E.5) mit Permission-Gate (E.4).
+ *  - Optionales Vollbild-Interface (spec-focus E, WP-F1-4): implementiert ein
+ *    Widget `renderExpanded(container)`, ruft der Host es ausschließlich im
+ *    Modus `fullscreen` auf; fehlt die Methode, bleibt die generische
+ *    Vollbild-Darstellung. Beim Verlassen wird `render()` erneut aufgerufen.
  */
 
 import { ApiError, api } from "./api.js";
@@ -144,6 +148,8 @@ export class WidgetRuntime {
       unsubscribers: [],
       state: "created",
       errorCode: null,
+      expanded: false,
+      expandedContainer: null,
     };
     this.instances.set(instanceId, entry);
 
@@ -216,6 +222,78 @@ export class WidgetRuntime {
     this.schedule(entry);
   }
 
+  // --- Vollbild (spec-focus E, WP-F1-4) -------------------------------------
+
+  /**
+   * Host-Einstieg für den Fokusmodus. Einziger Weg, auf dem `renderExpanded`
+   * aufgerufen wird — und zwar nur für `mode === "fullscreen"`:
+   *
+   *  - `fullscreen`: implementiert das Widget `renderExpanded(container)`, wird
+   *    die erweiterte Ansicht in `container` neu aufgebaut; sonst `false`, und
+   *    der Host behält die generische Vollbild-Darstellung (Kachel-Body per CSS).
+   *  - jeder andere Modus (`highlight`/`enlarge`/`null`): war das Widget im
+   *    Vollbild, ruft der Host `render()` erneut auf und lässt es so zurück.
+   *
+   * Fehler aus `renderExpanded` laufen durch denselben Fehlervertrag wie
+   * `render`/`refresh` (E.3): Platzhalter im Ziel-Container, Poll gestoppt,
+   * kein Absturz.
+   *
+   * @param {string} instanceId
+   * @param {string|null} mode
+   * @param {object} [options]
+   * @param {HTMLElement} [options.container] Ziel des Vollbilds (Overlay-Body).
+   * @returns {Promise<boolean>} true, wenn das Widget das Vollbild übernommen
+   *   hat (auch im Fehlerfall, dann mit Platzhalter); false = generisch.
+   */
+  async applyFocus(instanceId, mode, { container = null } = {}) {
+    const entry = this.instances.get(instanceId);
+    if (!entry || !entry.widget) {
+      return false;
+    }
+    if (mode === "fullscreen") {
+      return this.expand(entry, container);
+    }
+    return this.collapse(entry);
+  }
+
+  /** Vollbild betreten: optionaler `renderExpanded(container)`-Hook. */
+  async expand(entry, container = null) {
+    if (typeof entry.widget.renderExpanded !== "function") {
+      // Abwärtskompatibel (E.4): kein Manifest-Pflichtfeld, generische Ansicht.
+      entry.expanded = false;
+      entry.expandedContainer = null;
+      return false;
+    }
+    this.log.info(`[widget:${entry.widgetId}] renderExpanded`);
+    entry.expanded = true;
+    entry.expandedContainer = container;
+    try {
+      await entry.widget.renderExpanded(container);
+    } catch (error) {
+      this.failInstance(entry, error, container);
+    }
+    return true;
+  }
+
+  /** Vollbild verlassen: `render()` erneut aufrufen (Widget bleibt idempotent). */
+  async collapse(entry) {
+    if (!entry.expanded) {
+      return false;
+    }
+    entry.expanded = false;
+    entry.expandedContainer = null;
+    this.log.info(`[widget:${entry.widgetId}] render (Vollbild verlassen)`);
+    try {
+      await entry.widget.render();
+      entry.state = "ready";
+      entry.errorCode = null;
+      this.schedule(entry);
+    } catch (error) {
+      this.failInstance(entry, error);
+    }
+    return true;
+  }
+
   /** Entlädt ein Widget: Timer, Subscriptions, DOM (E.3). */
   destroy(entry) {
     this.log.info(`[widget:${entry.widgetId}] destroy`);
@@ -237,6 +315,8 @@ export class WidgetRuntime {
     }
     entry.container.replaceChildren();
     entry.container.classList.remove(`wg-${entry.widgetId}`);
+    entry.expanded = false;
+    entry.expandedContainer = null;
     entry.state = "destroyed";
     this.instances.delete(entry.instanceId);
   }
@@ -265,7 +345,7 @@ export class WidgetRuntime {
   }
 
   /** Fehlervertrag: Platzhalter mit Widget-ID + Fehlercode, Poll gestoppt. */
-  failInstance(entry, error) {
+  failInstance(entry, error, target = null) {
     const code = (error && error.code) || "WIDGET_ERROR";
     entry.state = "error";
     entry.errorCode = code;
@@ -286,7 +366,7 @@ export class WidgetRuntime {
     detail.textContent = `Fehlercode: ${code}`;
 
     placeholder.append(title, detail);
-    entry.container.replaceChildren(placeholder);
+    (target || entry.container).replaceChildren(placeholder);
   }
 
   /** Plugin-API (E.5) mit Permission-Gate (E.4). */

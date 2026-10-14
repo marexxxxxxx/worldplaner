@@ -244,8 +244,28 @@ button {
   overflow: auto;
 }
 
-/* `fullscreen` erhält zusätzlich `bento-item--focus-fullscreen`; das Overlay
-   liefert WP-F1-4 (generisch bzw. `renderExpanded`). */
+/* `fullscreen` erhält zusätzlich `bento-item--focus-fullscreen`. Die Kachel
+   deckt dann als Overlay den Inhaltsbereich; die Kopfzeile/Tabbar bleibt
+   sichtbar (spec-focus H4). Der Kachel-Body zeigt entweder die generische
+   `render()`-Ansicht oder das Ergebnis von `renderExpanded()` (WP-F1-4).
+   Absolute Positionierung greift gegen `.views` (`position: relative`), nicht
+   gegen den Viewport — so bleibt der Header unberührt. */
+.bento-grid.is-focus-mode .bento-item.is-focused.bento-item--focus-fullscreen {
+  position: absolute;
+  inset: 0;
+  z-index: 40;
+  margin: 0;
+  border-radius: 0;
+  border-color: var(--line-strong);
+  background: var(--bg);
+  overflow: auto;
+}
+
+.bento-grid.is-focus-mode
+  .bento-item.is-focused.bento-item--focus-fullscreen
+  .bento-item__body {
+  overflow: auto;
+}
 
 /* Sichtbare Zurück-Schaltfläche: >= 44x44 px, kein Hover nötig (F). */
 .focus-back {

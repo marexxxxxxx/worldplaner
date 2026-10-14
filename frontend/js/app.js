@@ -543,6 +543,7 @@ export class DashboardApp {
     for (const grid of this.grids.values()) {
       grid.clearFocus();
     }
+    this._applyRuntimeFocus();
     if (!this.focus || this.activeSlug !== this.focus.tab_id) {
       return;
     }
@@ -554,6 +555,27 @@ export class DashboardApp {
     grid.setFocus(this.focus.instance_id, this.focus.mode);
     this._mountFocusBackButton(entry);
     this._bindFocusReset(entry);
+  }
+
+  /**
+   * WP-F1-4 (spec-focus E): Vollbild an die Widget-Runtime melden. Nur die
+   * fokussierte Kachel wird bei `fullscreen` zu `renderExpanded(container)`
+   * aufgefordert (die Runtime prüft `typeof === "function"`); jede andere
+   * Kachel und jeder Nicht-Vollbild-Modus verlässt ein evtl. Vollbild — die
+   * Runtime ruft dann `render()` erneut auf. Läuft ohne `await`; die Runtime
+   * fängt Fehler selbst ab (E.3).
+   */
+  _applyRuntimeFocus() {
+    const focusedId =
+      this.focus && this.activeSlug === this.focus.tab_id ? this.focus.instance_id : null;
+    const focusedFullscreen = Boolean(focusedId) && this.focus.mode === "fullscreen";
+    for (const [instanceId, runtimeEntry] of this.runtime.instances) {
+      if (focusedFullscreen && instanceId === focusedId) {
+        this.runtime.applyFocus(instanceId, "fullscreen", { container: runtimeEntry.container });
+      } else {
+        this.runtime.applyFocus(instanceId, "enlarge");
+      }
+    }
   }
 
   _restartAutoReset() {
