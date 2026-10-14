@@ -4,19 +4,25 @@ Lokales, berührungslos bedienbares Kiosk-Dashboard (Wetter, Garmin-Gesundheitsd
 Hermes-To-Dos) für ein Dell-Tablet. Grundlage ist die build-reife Spezifikation
 `spec` Rev 2 (Abschnitte A–L).
 
-Dieser Stand ist **K1 / WP-2**: Docker Compose, SQLite-Schema und das
-FastAPI-Backend-Skeleton (Abschnitte B, C, D, H).
+Dieser Stand umfasst **K1 / WP-2** (Docker Compose, SQLite-Schema, FastAPI-Backend,
+Abschnitte B, C, D, H), **K4** (Betriebsartefakte, Abschnitt J) und
+**K2 / WP-3 + WP-7** (Widget-Runtime und Hermes-To-Do-Tab, Abschnitte E, I).
 
 ## Umfang dieses Stands
 
 Enthalten:
 
-- `compose.yaml` — der `backend`-Service
+- `compose.yaml` — der `backend`-Service (liefert Frontend + Widgets aus, D10)
 - `.env.example` — Env-Template
 - `backend/` — FastAPI-App, SQLite-Schema, REST-API, Tests
+- `frontend/` — App-Shell, Bento-Grid, Widget-Runtime, REST-Client
+- `widgets/hermes-todos/` — Hermes-To-Do-Widget
+- `deploy/` — systemd-Units und Display-Skripte
+- `docs/setup.md` — Setup-Checkliste
 
-Noch **nicht** enthalten (eigene Work-Packages): `frontend/`, `widgets/`,
-`mcp-server/`, `garmin-sync/`, `deploy/`.
+Noch **nicht** enthalten (eigene Work-Packages): Wetter-Widget (WP-4),
+Garmin-Widgets (WP-6), `garmin-sync/` (WP-5), `mcp-server/` (WP-8),
+Widget-Verwaltung (WP-9).
 
 ## Voraussetzungen
 
@@ -63,3 +69,29 @@ pytest
 | GET | `/api/events` | SSE-Ereignisstrom |
 
 Fehlerformat einheitlich: `{"error":{"code":"…","message":"…","retryable":false}}`.
+
+## Frontend & Widgets (K2 / WP-3 + WP-7)
+
+Das Backend liefert Frontend und Widgets unter derselben Origin aus (D10):
+`/` → `frontend/`, `/widgets/<id>/…` → `widgets/<id>/`.
+
+- `frontend/js/widget-runtime.js` — Plugin-Host: dynamisches Laden per
+  `import()`, Lifecycle `constructor → render → (refresh)* → destroy`,
+  Fehlervertrag (Platzhalter + Fehlercode statt Host-Absturz), Plugin-API mit
+  Permission-Gate (E.4/E.5).
+- `frontend/js/bento.js` — Bento-Grid (12 Spalten, 96 px Zeilenhöhe, 8 px Gap,
+  Touch-Verschieben per Long-Press).
+- `frontend/js/app.js` — Bootstrap, Tab-Routing, SSE-Client mit Backoff (D.8).
+- `widgets/hermes-todos/` — To-Do-Liste mit Abhaken (`PATCH /api/tasks/{id}`
+  inkl. `base_version`) und Live-Aktualisierung per SSE (WP-7).
+
+### Tests (Frontend)
+
+```bash
+cd frontend
+npm install
+npm test        # Unit-Tests der Grid-Engine (node --test)
+
+# E2E gegen den laufenden Stack:
+BASE_URL=http://127.0.0.1:8000 CHROMIUM_PATH=/pfad/zu/chrome npm run test:e2e
+```

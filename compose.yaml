@@ -10,6 +10,11 @@ services:
     ports: ["127.0.0.1:${BACKEND_PORT:-8000}:8000"]
     volumes:
       - sqlite-data:/data
+      # Frontend + Widgets werden vom Backend ausgeliefert (D10). Im Container
+      # liegt `backend/app/main.py` unter /app/app -> project_root ist "/",
+      # deshalb werden die Verzeichnisse dort eingehängt (K2/WP-3).
+      - ./frontend:/frontend:ro
+      - ./widgets:/widgets:ro
     env_file:
       - path: .env
         required: false

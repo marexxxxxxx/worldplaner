@@ -1,0 +1,294 @@
+/* worldplaner — Dashboard-Shell, Bento-Grid und Plugin-Chrome.
+   Vanilla CSS mit CSS-Variablen (D2: kein Tailwind, kein Build-Schritt).
+   Palette nach Spezifikation I.2. */
+
+:root {
+  --bg: #050505;
+  --cell-a: #0d0d0d;
+  --cell-b: #141414;
+  --line: #1c1c1c;
+  --line-strong: #242424;
+  --text-primary: #f5f5f5;
+  --text-secondary: #a3a3a3;
+  --accent: #3b82f6;
+  --accent-soft: #14233c;
+  --danger: #fca5a5;
+
+  --grid-columns: 12;
+  --grid-row-height: 96px;
+  --grid-gap: 8px;
+
+  --radius-card: 16px;
+  --radius-control: 12px;
+  --tap-target: 44px;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text-primary);
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  overflow: hidden;
+}
+
+button {
+  font: inherit;
+  color: inherit;
+}
+
+:focus-visible {
+  outline: 3px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* --- Shell ---------------------------------------------------------------- */
+
+.app {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  height: 100dvh;
+}
+
+.app-header {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+  padding: 10px 16px;
+  background: var(--bg);
+  border-bottom: 1px solid var(--line);
+}
+
+.app-title {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.tabbar {
+  display: flex;
+  gap: 8px;
+}
+
+.tab {
+  min-height: var(--tap-target);
+  min-width: var(--tap-target);
+  padding: 0 16px;
+  border-radius: var(--radius-control);
+  border: 1px solid transparent;
+  background: var(--cell-a);
+  color: var(--text-secondary);
+  font-size: 16px;
+}
+
+.tab[aria-selected="true"] {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+.conn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 0 auto;
+  color: var(--text-secondary);
+  font-size: 14px;
+}
+
+.conn__dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--text-secondary);
+}
+
+.conn[data-state="online"] .conn__dot {
+  background: var(--accent);
+}
+
+.conn[data-state="offline"] .conn__dot {
+  background: var(--danger);
+}
+
+.views {
+  flex: 1;
+  min-height: 0;
+  position: relative;
+}
+
+.view {
+  height: 100%;
+  overflow-y: auto;
+  padding: var(--grid-gap);
+}
+
+.empty-state {
+  margin: 24px 16px;
+  color: var(--text-secondary);
+  font-size: 16px;
+}
+
+/* --- Bento-Grid (E.6 / I.1) ---------------------------------------------- */
+
+.bento-grid {
+  display: grid;
+  grid-template-columns: repeat(var(--grid-columns), minmax(0, 1fr));
+  grid-auto-rows: var(--grid-row-height);
+  gap: var(--grid-gap);
+}
+
+.bento-item {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  background: var(--cell-a);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  overflow: hidden;
+}
+
+.bento-item:nth-child(even) {
+  background: var(--cell-b);
+}
+
+.bento-item__header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: var(--tap-target);
+  padding: 4px 4px 4px 16px;
+  border-bottom: 1px solid var(--line);
+  touch-action: none;
+  user-select: none;
+}
+
+.bento-item__title {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.bento-item__handle {
+  margin-left: auto;
+  width: var(--tap-target);
+  height: var(--tap-target);
+  display: grid;
+  place-items: center;
+  border-radius: 10px;
+  border: 1px solid var(--line-strong);
+  background: var(--bg);
+  color: var(--text-secondary);
+  font-size: 18px;
+  touch-action: none;
+}
+
+.bento-item__body {
+  flex: 1;
+  min-height: 0;
+  padding: 12px;
+  overflow: hidden;
+}
+
+.bento-item.is-dragging {
+  outline: 2px solid var(--accent);
+  opacity: 0.92;
+}
+
+/* --- Widget-Fehlerplatzhalter (E.3) -------------------------------------- */
+
+.wg-error {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 100%;
+  padding: 16px;
+  text-align: center;
+  border: 1px dashed var(--danger);
+  border-radius: var(--radius-control);
+  background: var(--cell-a);
+}
+
+.wg-error__title {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.wg-error__code {
+  margin: 0;
+  font-size: 14px;
+  color: var(--danger);
+  font-variant-numeric: tabular-nums;
+}
+
+/* --- Widget-Verwaltung (Platzhalter für WP-9) ---------------------------- */
+
+.widget-admin {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-width: 720px;
+}
+
+.widget-admin__item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-height: var(--tap-target);
+  justify-content: center;
+  padding: 10px 16px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-control);
+  background: var(--cell-a);
+}
+
+.widget-admin__name {
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.widget-admin__meta {
+  color: var(--text-secondary);
+  font-size: 13px;
+}
+
+/* --- Barrierefreiheit ----------------------------------------------------- */
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}

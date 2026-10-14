@@ -1,0 +1,288 @@
+/**
+ * Bento-Grid-Engine (Spezifikation E.6 / I.1).
+ *
+ * Reine Funktionen kapseln das Raster-Format (12 Spalten, x/y/w/h); die Klasse
+ * `BentoGrid` rendert Instanzen in ein Grid-Element und macht sie per Touch
+ * verschieb-/größerbar — ohne jede Hover-Abhängigkeit:
+ *   - Verschieben: Long-Press auf die Kachelkopfzeile, dann ziehen.
+ *   - Vergrößern: sichtbarer 44-px-Griff in der Kopfzeile.
+ * Nach dem Loslassen wird die neue Position über `persist` gespeichert.
+ */
+
+export const LONG_PRESS_MS = 600;
+const MOVE_CANCEL_PX = 10;
+
+/** Rasterzelle -> CSS-Grid-Platzierung (0-basiert, `grid-*-start` 1-basiert). */
+export function gridPlacement({ x, y, w, h }) {
+  return {
+    gridColumn: `${x + 1} / span ${w}`,
+    gridRow: `${y + 1} / span ${h}`,
+  };
+}
+
+/** Überlappen sich zwei Rechtecke? (Berühren zählt nicht als Überlappung.) */
+export function rectsOverlap(a, b) {
+  return !(a.x + a.w <= b.x || b.x + b.w <= a.x || a.y + a.h <= b.y || b.y + b.h <= a.y);
+}
+
+function clamp(value, min, max) {
+  return Math.min(Math.max(value, min), max);
+}
+
+export class BentoGrid {
+  /**
+   * @param {object} options
+   * @param {HTMLElement} options.element     Grid-Container (CSS-Grid).
+   * @param {string} options.tabId
+   * @param {number} [options.columns=12]
+   * @param {number} [options.rowHeight=96]
+   * @param {number} [options.gap=8]
+   * @param {object} [options.minSizes]       widgetId -> {w,h}
+   * @param {Function} [options.persist]      async (instance) => void
+   * @param {object} [options.log]
+   */
+  constructor({
+    element,
+    tabId,
+    columns = 12,
+    rowHeight = 96,
+    gap = 8,
+    minSizes = {},
+    persist = null,
+    log = console,
+  }) {
+    this.element = element;
+    this.tabId = tabId;
+    this.columns = columns;
+    this.rowHeight = rowHeight;
+    this.gap = gap;
+    this.minSizes = minSizes;
+    this.persist = persist;
+    this.log = log;
+    this.entries = new Map();
+
+    this.element.style.setProperty("--grid-columns", String(columns));
+    this.element.style.setProperty("--grid-row-height", `${rowHeight}px`);
+    this.element.style.setProperty("--grid-gap", `${gap}px`);
+  }
+
+  /** Fügt eine Instanz hinzu und gibt den Kachel-Body (Widget-Container) zurück. */
+  add(instance) {
+    const node = document.createElement("section");
+    node.className = "bento-item";
+    node.dataset.instanceId = instance.id;
+    node.dataset.widgetId = instance.widget_id;
+
+    const header = document.createElement("header");
+    header.className = "bento-item__header";
+
+    const title = document.createElement("h2");
+    title.className = "bento-item__title";
+    title.textContent = instance.title || instance.widget_id;
+
+    const handle = document.createElement("button");
+    handle.type = "button";
+    handle.className = "bento-item__handle";
+    handle.textContent = "⤡";
+    handle.setAttribute("aria-label", `Widget ${instance.widget_id} vergrößern oder verkleinern`);
+
+    header.append(title, handle);
+
+    const body = document.createElement("div");
+    body.className = "bento-item__body";
+
+    node.append(header, body);
+    this.element.append(node);
+
+    const entry = { instance, node, header, handle, body };
+    this._applyRect(entry, instance);
+    this.entries.set(instance.id, entry);
+    this._bindMove(entry);
+    this._bindResize(entry);
+    return body;
+  }
+
+  remove(instanceId) {
+    const entry = this.entries.get(instanceId);
+    if (!entry) {
+      return;
+    }
+    entry.node.remove();
+    this.entries.delete(instanceId);
+  }
+
+  get(instanceId) {
+    return this.entries.get(instanceId) || null;
+  }
+
+  destroy() {
+    for (const entry of this.entries.values()) {
+      entry.node.remove();
+    }
+    this.entries.clear();
+  }
+
+  // --- intern ---------------------------------------------------------------
+
+  _applyRect(entry, rect) {
+    const placement = gridPlacement(rect);
+    entry.node.style.gridColumn = placement.gridColumn;
+    entry.node.style.gridRow = placement.gridRow;
+  }
+
+  _others(instanceId) {
+    return [...this.entries.values()]
+      .filter((entry) => entry.instance.id !== instanceId)
+      .map((entry) => entry.instance);
+  }
+
+  _minSize(instance) {
+    const min = this.minSizes[instance.widget_id] || {};
+    return { w: Math.max(1, min.w || 1), h: Math.max(1, min.h || 1) };
+  }
+
+  _fits(candidate, others) {
+    if (candidate.x < 0 || candidate.y < 0 || candidate.w < 1 || candidate.h < 1) {
+      return false;
+    }
+    if (candidate.x + candidate.w > this.columns) {
+      return false;
+    }
+    return !others.some((other) => rectsOverlap(candidate, other));
+  }
+
+  _cellSize() {
+    const rect = this.element.getBoundingClientRect();
+    const width = rect.width || this.columns * (this.rowHeight + this.gap);
+    const cellWidth = (width - this.gap * (this.columns - 1)) / this.columns;
+    return { cellWidth: Math.max(1, cellWidth), cellHeight: this.rowHeight, rect };
+  }
+
+  _bindMove(entry) {
+    const { header, node, instance } = entry;
+    let pressTimer = null;
+    let start = null;
+    let dragging = false;
+
+    const reset = () => {
+      if (pressTimer) {
+        clearTimeout(pressTimer);
+        pressTimer = null;
+      }
+      node.classList.remove("is-dragging");
+      node.style.removeProperty("transform");
+      node.style.removeProperty("z-index");
+    };
+
+    header.addEventListener("pointerdown", (event) => {
+      if (event.target.closest(".bento-item__handle")) {
+        return;
+      }
+      start = { x: event.clientX, y: event.clientY };
+      pressTimer = setTimeout(() => {
+        dragging = true;
+        node.classList.add("is-dragging");
+        node.style.zIndex = "5";
+      }, LONG_PRESS_MS);
+    });
+
+    header.addEventListener("pointermove", (event) => {
+      if (!start) {
+        return;
+      }
+      const dx = event.clientX - start.x;
+      const dy = event.clientY - start.y;
+      if (!dragging) {
+        if (Math.hypot(dx, dy) > MOVE_CANCEL_PX) {
+          reset();
+          start = null;
+        }
+        return;
+      }
+      event.preventDefault();
+      node.style.transform = `translate(${dx}px, ${dy}px)`;
+    });
+
+    const finish = (event) => {
+      if (!start || !dragging) {
+        reset();
+        start = null;
+        return;
+      }
+      const dx = event.clientX - start.x;
+      const dy = event.clientY - start.y;
+      const { cellWidth, cellHeight } = this._cellSize();
+      const stepX = cellWidth + this.gap;
+      const stepY = cellHeight + this.gap;
+      const target = {
+        ...instance,
+        x: clamp(instance.x + Math.round(dx / stepX), 0, this.columns - instance.w),
+        y: Math.max(0, instance.y + Math.round(dy / stepY)),
+      };
+      reset();
+      start = null;
+      const committed = this._commit(entry, target);
+      if (!committed) {
+        this._applyRect(entry, instance);
+      }
+    };
+
+    header.addEventListener("pointerup", finish);
+    header.addEventListener("pointercancel", finish);
+  }
+
+  _bindResize(entry) {
+    const { handle, instance } = entry;
+    let context = null;
+
+    const finish = (event) => {
+      if (!context) {
+        return;
+      }
+      const dx = event.clientX - context.start.x;
+      const dy = event.clientY - context.start.y;
+      const { cellWidth, cellHeight } = this._cellSize();
+      const stepX = cellWidth + this.gap;
+      const stepY = cellHeight + this.gap;
+      const min = this._minSize(instance);
+      const target = {
+        ...instance,
+        w: clamp(instance.w + Math.round(dx / stepX), min.w, this.columns - instance.x),
+        h: Math.max(min.h, instance.h + Math.round(dy / stepY)),
+      };
+      context = null;
+      const committed = this._commit(entry, target);
+      if (!committed) {
+        this._applyRect(entry, instance);
+      }
+    };
+
+    handle.addEventListener("pointerdown", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      context = { start: { x: event.clientX, y: event.clientY } };
+      handle.setPointerCapture?.(event.pointerId);
+    });
+    handle.addEventListener("pointerup", finish);
+    handle.addEventListener("pointercancel", finish);
+  }
+
+  /** Validiert gegen Bounds/Überlappung, übernimmt und persistiert. */
+  _commit(entry, target) {
+    if (!this._fits(target, this._others(entry.instance.id))) {
+      this.log?.info?.(`[bento:${this.tabId}] Ziel belegt oder außerhalb des Rasters`, target);
+      return false;
+    }
+    const next = { ...entry.instance, ...target };
+    entry.instance = next;
+    this._applyRect(entry, next);
+    if (typeof this.persist === "function") {
+      Promise.resolve(
+        this.persist(next, { x: next.x, y: next.y, w: next.w, h: next.h }),
+      ).catch((error) => {
+        this.log?.warn?.(`[bento:${this.tabId}] Speichern fehlgeschlagen`, error);
+      });
+    }
+    return true;
+  }
+}

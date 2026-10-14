@@ -1,0 +1,14 @@
+{
+  "name": "worldplaner-frontend",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Kiosk-Dashboard-MVP — Frontend/Widget-Runtime (kein Build-Schritt, D2)",
+  "scripts": {
+    "test": "node --test tests/",
+    "test:e2e": "node tests/e2e.mjs"
+  },
+  "devDependencies": {
+    "playwright-core": "^1.64.1"
+  }
+}

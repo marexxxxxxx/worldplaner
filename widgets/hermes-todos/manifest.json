@@ -1,0 +1,26 @@
+{
+  "id": "hermes-todos",
+  "name": "Hermes-To-Dos",
+  "version": "1.0.0",
+  "author": "Marex Agent Developer",
+  "description": "To-Do-Liste aus hermes_tasks: Anzeige, Abhaken und Live-Aktualisierung per SSE.",
+  "category": "productivity",
+  "icon": "icon.svg",
+  "permissions": ["tasks"],
+  "config_schema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "filter": {
+        "type": "string",
+        "enum": ["open", "done", "all"],
+        "default": "open",
+        "description": "Standardfilter der Liste."
+      }
+    }
+  },
+  "default_size": { "w": 12, "h": 6 },
+  "min_size": { "w": 4, "h": 3 },
+  "max_instances": 1,
+  "tags": ["hermes", "tasks", "todos"]
+}
