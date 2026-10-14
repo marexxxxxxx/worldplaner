@@ -33,6 +33,9 @@ DEFAULT_BACKOFF_CAP_SECONDS = 3600
 DEFAULT_TOKEN_DIR = "/data/token"
 # H.1: der Sync schreibt in dieselbe DB-Datei (Volume sqlite-data) wie das Backend.
 DEFAULT_DB_PATH = "/data/db/dashboard.db"
+# Lokale Zeitzone fuer das manuelle Anlegen einer Aktivitaet (WP-P2-5). Garmin
+# erwartet die Startzeit als lokale Zeit plus Zeitzonen-Schluessel.
+DEFAULT_TIMEZONE = "UTC"
 
 # G.5: get_activities(0, limit) — Anzahl der zuletzt abgerufenen Aktivitaeten.
 WORKOUT_LIMIT = 50
@@ -65,6 +68,7 @@ class Config:
     backoff_cap_seconds: int
     token_dir: str
     db_path: str
+    timezone: str = DEFAULT_TIMEZONE
 
 
 def _int_env(env: dict[str, str], name: str, default: int) -> int:
@@ -94,6 +98,7 @@ def load_config(env: dict[str, str] | None = None) -> Config:
         ),
         token_dir=source.get("GARMIN_TOKEN_DIR") or DEFAULT_TOKEN_DIR,
         db_path=source.get("GARMIN_DB_PATH") or DEFAULT_DB_PATH,
+        timezone=source.get("GARMIN_TIMEZONE") or DEFAULT_TIMEZONE,
     )
 
 
@@ -279,6 +284,114 @@ def normalize_workouts(activities: Any) -> dict[str, list[dict[str, Any]]]:
     return grouped
 
 
+# --- Schreibpfad: Validierung und Normalisierung (WP-P2-5) -------------------
+
+
+class WriteValidationError(ValueError):
+    """Ungueltige Eingabe fuer den internen Schreibpfad (WP-P2-5)."""
+
+
+# Erlaubte Felder des Schreib-Payloads (spec-phase2 D/WP-P2-5).
+WORKOUT_FIELDS = (
+    "activity_type",
+    "start_time",
+    "duration_s",
+    "distance_m",
+    "calories",
+    "title",
+)
+
+
+def parse_start_time(value: Any) -> datetime | None:
+    """Parst ISO-8601 (UTC ``...Z`` oder Offset) zu einem aware datetime in UTC."""
+    if not isinstance(value, str):
+        return None
+    text = value.strip()
+    if not text:
+        return None
+    try:
+        parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
+
+
+def validate_workout_payload(payload: Any) -> dict[str, Any]:
+    """Prueft das Payload-Schema an der Grenze (Pflichtfelder, Wertebereiche).
+
+    Liefert das normalisierte Payload; wirft ``WriteValidationError`` mit einer
+    konkreten Meldung, wenn ein Feld fehlt oder falsch typisiert ist.
+    """
+    if not isinstance(payload, dict):
+        raise WriteValidationError("payload muss ein Objekt sein")
+    unknown = sorted(set(payload) - set(WORKOUT_FIELDS))
+    if unknown:
+        raise WriteValidationError("Unbekannte Felder: " + ", ".join(unknown))
+
+    activity_type = payload.get("activity_type")
+    if not isinstance(activity_type, str) or not activity_type.strip():
+        raise WriteValidationError("activity_type ist erforderlich (nicht leer)")
+
+    start = parse_start_time(payload.get("start_time"))
+    if start is None:
+        raise WriteValidationError("start_time ist erforderlich (ISO-8601 UTC)")
+
+    duration = payload.get("duration_s")
+    if isinstance(duration, bool) or not isinstance(duration, int) or duration < 1:
+        raise WriteValidationError("duration_s ist erforderlich (Ganzzahl >= 1)")
+
+    normalized: dict[str, Any] = {
+        "activity_type": activity_type.strip(),
+        "start_time": _iso_utc(start),
+        "duration_s": duration,
+    }
+
+    distance = payload.get("distance_m")
+    if distance is not None:
+        if (
+            isinstance(distance, bool)
+            or not isinstance(distance, (int, float))
+            or distance < 0
+        ):
+            raise WriteValidationError("distance_m muss eine Zahl >= 0 sein")
+        normalized["distance_m"] = float(distance)
+
+    calories = payload.get("calories")
+    if calories is not None:
+        if isinstance(calories, bool) or not isinstance(calories, int) or calories < 0:
+            raise WriteValidationError("calories muss eine Ganzzahl >= 0 sein")
+        normalized["calories"] = calories
+
+    title = payload.get("title")
+    if title is not None:
+        if not isinstance(title, str):
+            raise WriteValidationError("title muss eine Zeichenkette sein")
+        normalized["title"] = title
+
+    return normalized
+
+
+def workout_item_from_payload(
+    payload: dict[str, Any], activity_id: Any
+) -> dict[str, Any]:
+    """Baut einen G.5-Workout-Eintrag aus dem Schreib-Payload (Fallback)."""
+    start = parse_start_time(payload["start_time"])
+    return {
+        "date": start.strftime("%Y-%m-%d"),
+        "activity_id": None if activity_id is None else str(activity_id),
+        "activity_type": payload["activity_type"],
+        "activity_name": payload.get("title"),
+        "start_time": _iso_utc(start),
+        "duration_s": payload["duration_s"],
+        "distance_m": payload.get("distance_m"),
+        "calories": payload.get("calories"),
+        "avg_hr": None,
+        "max_hr": None,
+    }
+
+
 # --- Datenbank (einziger Schreiber von `garmin_cache`, A.2/D4) ---------------
 
 
@@ -387,6 +500,25 @@ class RealGarminClient:
     def get_activities(self, start: int, limit: int) -> Any:
         return self._call(self._garmin.get_activities, start, limit)
 
+    def add_workout(self, payload: dict[str, Any]) -> Any:
+        """Legt eine abgeschlossene Aktivitaet an (WP-P2-5, D14/D16).
+
+        Nutzt `create_manual_activity` aus python-garminconnect; die Startzeit
+        wird als lokale Zeit plus Zeitzonen-Schluessel uebergeben.
+        """
+        start = parse_start_time(payload["start_time"])
+        distance_m = payload.get("distance_m")
+        distance_km = 0.0 if distance_m is None else float(distance_m) / 1000.0
+        return self._call(
+            self._garmin.create_manual_activity,
+            start.strftime("%Y-%m-%dT%H:%M:%S.000"),
+            self._config.timezone,
+            payload["activity_type"],
+            distance_km,
+            payload["duration_s"] / 60.0,
+            payload.get("title") or "",
+        )
+
 
 def _mock_ms(date: str, hour: int, minute: int) -> int:
     moment = datetime.fromisoformat(f"{date}T{hour:02d}:{minute:02d}:00").replace(
@@ -401,7 +533,31 @@ class MockGarminClient:
     Nur aktiv bei `GARMIN_SYNC_MOCK=1` (Abnahme B2.2: mit gemocktem Garmin-Client
     schreibt `garmin-sync` eine `garmin_cache`-Zeile im Schema G.5). Liefert
     Beispieldaten im Rohformat von python-garminconnect.
+
+    Die Aktivitaeten liegen im Speicher; `add_workout` haengt eine synthetische
+    Aktivitaet an, damit der komplette Schreibpfad (WP-P2-5) ohne echten Account
+    verifizierbar ist.
     """
+
+    def __init__(self, activities: list[dict[str, Any]] | None = None) -> None:
+        self._activities = list(activities) if activities is not None else [
+            self._default_activity()
+        ]
+        self._next_activity_id = 9000000001
+
+    @staticmethod
+    def _default_activity() -> dict[str, Any]:
+        return {
+            "activityId": 1234567890,
+            "activityType": {"typeKey": "running"},
+            "activityName": "Morning Run",
+            "startTimeGMT": f"{_utc_date()} 07:15:00",
+            "duration": 2412.0,
+            "distance": 5210.5,
+            "calories": 412,
+            "averageHR": 149,
+            "maxHR": 171,
+        }
 
     def login(self) -> None:
         log.info(
@@ -449,19 +605,26 @@ class MockGarminClient:
         }
 
     def get_activities(self, start: int, limit: int) -> list[dict[str, Any]]:
-        return [
-            {
-                "activityId": 1234567890,
-                "activityType": {"typeKey": "running"},
-                "activityName": "Morning Run",
-                "startTimeGMT": f"{_utc_date()} 07:15:00",
-                "duration": 2412.0,
-                "distance": 5210.5,
-                "calories": 412,
-                "averageHR": 149,
-                "maxHR": 171,
-            }
-        ]
+        return list(self._activities[:limit])
+
+    def add_workout(self, payload: dict[str, Any]) -> dict[str, Any]:
+        """Synthetische Aktivitaet anlegen (WP-P2-5, Verifikation ohne Account)."""
+        start = parse_start_time(payload["start_time"])
+        activity_id = self._next_activity_id
+        self._next_activity_id += 1
+        activity = {
+            "activityId": activity_id,
+            "activityType": {"typeKey": payload["activity_type"]},
+            "activityName": payload.get("title"),
+            "startTimeGMT": start.strftime("%Y-%m-%d %H:%M:%S"),
+            "duration": float(payload["duration_s"]),
+            "distance": payload.get("distance_m"),
+            "calories": payload.get("calories"),
+            "averageHR": None,
+            "maxHR": None,
+        }
+        self._activities.insert(0, activity)
+        return activity
 
 
 # --- Sync-Durchlauf ----------------------------------------------------------
@@ -503,6 +666,25 @@ def sync_once(
     return [(kind, date) for kind, date, _ in rows]
 
 
+def sync_workouts_once(
+    conn: sqlite3.Connection, client: Any
+) -> dict[str, list[dict[str, Any]]]:
+    """Nur die Workout-Quelle abrufen und nach G.5 schreiben (WP-P2-5 Re-Sync).
+
+    Wird nach einem Schreibvorgang aufgerufen, damit `garmin_cache` die
+    aktualisierte `workout`-Zeile enthaelt. DB-Fehler werden als
+    ``TransientError`` gemeldet, Client-Fehler kommen aus dem Client.
+    """
+    activities = client.get_activities(0, WORKOUT_LIMIT)
+    grouped = normalize_workouts(activities)
+    try:
+        for date, items in grouped.items():
+            write_cache(conn, "workout", date, items)
+    except sqlite3.Error as exc:
+        raise TransientError(f"Datenbank-Schreibfehler: {exc}") from exc
+    return grouped
+
+
 # --- Scheduling (G.4) --------------------------------------------------------
 
 
@@ -512,6 +694,17 @@ def _has_credentials(config: Config) -> bool:
 
 def _has_token(config: Config) -> bool:
     return os.path.exists(os.path.join(config.token_dir, TOKEN_FILE_NAME))
+
+
+def client_factory(mock: bool) -> Callable[[Config], Any]:
+    """Waehlt den Garmin-Client: Mock bei ``GARMIN_SYNC_MOCK=1``, sonst echt.
+
+    Der Mock ersetzt die echte Anmeldung vollstaendig, damit der komplette
+    Lese- und Schreibpfad ohne Garmin-Account verifizierbar ist (WP-P2-5).
+    """
+    if mock:
+        return lambda _: MockGarminClient()
+    return RealGarminClient
 
 
 def run(
@@ -606,9 +799,13 @@ def main() -> int:
         config.db_path,
         config.token_dir,
     )
-    factory: Callable[[Config], Any] = (
-        (lambda _: MockGarminClient()) if mock else RealGarminClient
-    )
+    factory: Callable[[Config], Any] = client_factory(mock)
+    # Interner Write-Server im Hintergrundthread (WP-P2-5, D16): nur im
+    # Compose-Netz erreichbar, kein Host-Port. Der Import erfolgt hier, weil
+    # `write_server` seinerseits dieses Modul importiert.
+    import write_server
+
+    write_server.start_write_server(config, factory)
     run(config, conn, factory, require_credentials=not mock)
     return 0
 

@@ -128,6 +128,21 @@ SCREEN_DIM_SCHEMA = {
     },
 }
 
+# inputSchema woertlich aus spec-phase2 D/WP-P2-5 (oeffentliche API: unveraendert).
+GARMIN_ADD_WORKOUT_SCHEMA = {
+    "type": "object",
+    "additionalProperties": False,
+    "required": ["activity_type", "start_time", "duration_s"],
+    "properties": {
+        "activity_type": {"type": "string", "minLength": 1},
+        "start_time": {"type": "string", "description": "ISO-8601 UTC"},
+        "duration_s": {"type": "integer", "minimum": 1},
+        "distance_m": {"type": "number", "minimum": 0},
+        "calories": {"type": "integer", "minimum": 0},
+        "title": {"type": "string"},
+    },
+}
+
 
 # Jede Beschreibung nennt Zweck **und** Grenze (F.1: das Modell kennt den
 # Server nicht und liest nur diesen Text).
@@ -217,6 +232,25 @@ TOOL_DEFS: list[dict[str, Any]] = [
         ),
         "inputSchema": SCREEN_DIM_SCHEMA,
     },
+    {
+        "name": "garmin_add_workout",
+        "description": (
+            "Legt eine abgeschlossene Aktivitaet im Garmin-Account an "
+            "(schreibend). Wann: wenn Hermes ein bereits absolviertes Workout "
+            "nachtraegt, damit das Dashboard es aus dem Cache zeigt. Pflicht: "
+            "`activity_type` (Garmin-Typ, z. B. running), `start_time` "
+            "(ISO-8601 UTC) und `duration_s` (>= 1); optional `distance_m`, "
+            "`calories` und `title`. Grenze: dies ist das EINZIGE Garmin-"
+            "Schreibtool — Bearbeiten/Loeschen bestehender Aktivitaeten wird von "
+            "der inoffiziellen Garmin-API nicht zuverlaessig unterstuetzt und "
+            "ist nicht Teil dieses Servers (D14). Der MCP-Server schreibt nie "
+            "selbst nach Garmin: der Aufruf geht an das Backend, das an "
+            "garmin-sync delegiert (D16). Antwort: `{ok:true, workout:{...}}` mit "
+            "`activity_id`; Fehler `GARMIN_UNAVAILABLE` (retryable) oder "
+            "`GARMIN_AUTH_FAILED` (nicht retryable)."
+        ),
+        "inputSchema": GARMIN_ADD_WORKOUT_SCHEMA,
+    },
 ]
 
 _UPDATABLE_FIELDS = ("title", "description", "status", "priority", "due_at")
@@ -282,6 +316,7 @@ class Tools:
             "screen_off": self._screen_off,
             "screen_on": self._screen_on,
             "screen_dim": self._screen_dim,
+            "garmin_add_workout": self._garmin_add_workout,
         }
 
     async def dispatch(self, name: str, arguments: dict[str, Any]) -> dict[str, Any]:
@@ -371,6 +406,17 @@ class Tools:
             )
         await self._backend.delete_task(task_id)
         return ok(deleted_id=task_id)
+
+    async def _garmin_add_workout(self, args: dict[str, Any]) -> dict[str, Any]:
+        workout = await self._backend.add_workout(
+            activity_type=args["activity_type"],
+            start_time=args["start_time"],
+            duration_s=args["duration_s"],
+            distance_m=args.get("distance_m"),
+            calories=args.get("calories"),
+            title=args.get("title"),
+        )
+        return ok(workout=workout)
 
     # --- Display -----------------------------------------------------------
 

@@ -1,9 +1,10 @@
 """Pydantic-Schemas (Eingabevalidierung mit extra='forbid') und die einheitliche
 Fehlerform der REST-API (Spezifikation D.0)."""
 
+from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 # --- Fehlerform (D.0) -------------------------------------------------------
 
@@ -13,6 +14,10 @@ CODES = {
     "CONFLICT": 409,
     "FORBIDDEN": 403,
     "INTERNAL": 500,
+    # D17 (spec-phase2): ein fehlgeschlagener Garmin-Schreibvorgang ist ein
+    # echter Fehler und wird als 502 gemeldet (kein 401 in der Backend-API).
+    "GARMIN_UNAVAILABLE": 502,
+    "GARMIN_AUTH_FAILED": 502,
 }
 
 
@@ -41,6 +46,16 @@ def validation_error(message: str) -> ApiError:
 
 def forbidden(message: str) -> ApiError:
     return ApiError("FORBIDDEN", message)
+
+
+def garmin_unavailable(message: str) -> ApiError:
+    """Garmin-Backend (`garmin-sync`) nicht erreichbar/fehlerhaft (D17, 502)."""
+    return ApiError("GARMIN_UNAVAILABLE", message, retryable=True)
+
+
+def garmin_auth_failed(message: str) -> ApiError:
+    """Garmin-Session ungueltig/abgelaufen; erneuter MFA-Login ist Setup (D17)."""
+    return ApiError("GARMIN_AUTH_FAILED", message, retryable=False)
 
 
 # --- Eingabeschemas ---------------------------------------------------------
@@ -107,3 +122,33 @@ class StateUpdate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     value: str
+
+
+# --- Garmin-Schreibpfad (WP-P2-5) ------------------------------------------
+
+
+class GarminWorkoutCreate(BaseModel):
+    """Payload fuer `POST /api/garmin/workouts` (spec-phase2 D/WP-P2-5).
+
+    Pflicht: `activity_type`, `start_time`, `duration_s`.
+    Optional: `distance_m`, `calories`, `title`.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    activity_type: str = Field(min_length=1)
+    start_time: str = Field(min_length=1)
+    duration_s: int = Field(ge=1)
+    distance_m: float | None = Field(default=None, ge=0)
+    calories: int | None = Field(default=None, ge=0)
+    title: str | None = None
+
+    @field_validator("start_time")
+    @classmethod
+    def _start_time_is_iso8601(cls, value: str) -> str:
+        text = value.strip()
+        try:
+            datetime.fromisoformat(text.replace("Z", "+00:00"))
+        except ValueError:
+            raise ValueError("start_time muss ein ISO-8601-Zeitstempel sein") from None
+        return value

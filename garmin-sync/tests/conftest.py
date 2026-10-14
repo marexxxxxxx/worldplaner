@@ -31,3 +31,17 @@ def conn(tmp_path):
     connection.executescript(SCHEMA_PATH.read_text(encoding="utf-8"))
     yield connection
     connection.close()
+
+
+@pytest.fixture
+def db_path(tmp_path) -> str:
+    """Pfad einer Test-DB mit Produktionsschema (fuer den Write-Server).
+
+    Der Write-Server oeffnet pro Vorgang eine eigene Verbindung; deshalb wird
+    hier nur der Dateipfad weitergereicht, nicht eine offene Verbindung.
+    """
+    path = tmp_path / "dashboard.db"
+    connection = gs.connect_db(str(path))
+    connection.executescript(SCHEMA_PATH.read_text(encoding="utf-8"))
+    connection.close()
+    return str(path)

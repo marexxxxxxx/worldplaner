@@ -13,7 +13,19 @@ from typing import Any
 import httpx
 
 # Stabile Fehlercodes der Backend-API (D.0). Alles andere wird zu INTERNAL.
-_BACKEND_CODES = {"VALIDATION_ERROR", "NOT_FOUND", "CONFLICT", "FORBIDDEN", "INTERNAL"}
+_BACKEND_CODES = {
+    "VALIDATION_ERROR",
+    "NOT_FOUND",
+    "CONFLICT",
+    "FORBIDDEN",
+    "INTERNAL",
+    # D17 (spec-phase2): Codes des Garmin-Schreibpfads.
+    "GARMIN_UNAVAILABLE",
+    "GARMIN_AUTH_FAILED",
+}
+
+# 5xx-Codes, die durchgereicht (nicht zu BACKEND_UNAVAILABLE vereinfacht) werden.
+_PROPAGATED_ERROR_CODES = {"GARMIN_UNAVAILABLE", "GARMIN_AUTH_FAILED"}
 
 
 class BackendError(Exception):
@@ -58,6 +70,9 @@ class BackendClient:
         if response.status_code == 404 and allow_404:
             return response
         if response.status_code >= 500:
+            error = self._backend_error(response)
+            if error.code in _PROPAGATED_ERROR_CODES:
+                raise error
             raise BackendError(
                 "BACKEND_UNAVAILABLE",
                 f"Backend meldet Fehler (HTTP {response.status_code})",
@@ -166,3 +181,40 @@ class BackendClient:
 
     async def delete_task(self, task_id: str) -> None:
         await self._request("DELETE", f"/api/tasks/{task_id}")
+
+    async def add_workout(
+        self,
+        *,
+        activity_type: str,
+        start_time: str,
+        duration_s: int,
+        distance_m: float | None = None,
+        calories: int | None = None,
+        title: str | None = None,
+    ) -> dict[str, Any]:
+        """Legt eine Garmin-Aktivitaet ueber das Backend an (WP-P2-5, D16).
+
+        Der MCP-Server schreibt nie selbst nach Garmin: das Backend delegiert an
+        `garmin-sync` `POST /write`. Liefert das normalisierte Workout-Objekt
+        (mit `activity_id`). Fehlt das Objekt, gilt die Antwort als ungueltig.
+        """
+        payload: dict[str, Any] = {
+            "activity_type": activity_type,
+            "start_time": start_time,
+            "duration_s": duration_s,
+        }
+        if distance_m is not None:
+            payload["distance_m"] = distance_m
+        if calories is not None:
+            payload["calories"] = calories
+        if title is not None:
+            payload["title"] = title
+        response = await self._request("POST", "/api/garmin/workouts", json=payload)
+        workout = (response.json() or {}).get("workout")
+        if not isinstance(workout, dict):
+            raise BackendError(
+                "BACKEND_UNAVAILABLE",
+                "Backend liefert kein Workout-Objekt",
+                retryable=True,
+            )
+        return workout

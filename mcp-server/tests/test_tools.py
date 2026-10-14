@@ -16,7 +16,13 @@ from app.tools import Tools
 
 
 class FakeBackend:
-    def __init__(self, *, unavailable: bool = False, explode: bool = False) -> None:
+    def __init__(
+        self,
+        *,
+        unavailable: bool = False,
+        explode: bool = False,
+        garmin_error: tuple[str, bool] | None = None,
+    ) -> None:
         self.task: dict[str, Any] = {
             "id": "task-1",
             "title": "Milch kaufen",
@@ -30,8 +36,10 @@ class FakeBackend:
         }
         self.unavailable = unavailable
         self.explode = explode
+        self.garmin_error = garmin_error
         self.deleted: list[str] = []
         self.created: list[dict[str, Any]] = []
+        self.workouts: list[dict[str, Any]] = []
         self.states: dict[str, str] = {}
 
     def _guard(self) -> None:
@@ -77,6 +85,25 @@ class FakeBackend:
     async def delete_task(self, task_id: str) -> None:
         self._guard()
         self.deleted.append(task_id)
+
+    async def add_workout(self, **kwargs: Any) -> dict[str, Any]:
+        self._guard()
+        self.workouts.append(kwargs)
+        if self.garmin_error is not None:
+            code, retryable = self.garmin_error
+            raise BackendError(code, "garmin", retryable)
+        return {
+            "date": "2026-10-14",
+            "activity_id": "7000000001",
+            "activity_type": kwargs["activity_type"],
+            "activity_name": kwargs.get("title"),
+            "start_time": kwargs["start_time"],
+            "duration_s": kwargs["duration_s"],
+            "distance_m": kwargs.get("distance_m"),
+            "calories": kwargs.get("calories"),
+            "avg_hr": None,
+            "max_hr": None,
+        }
 
     async def set_state(self, key: str, value: str) -> None:
         self._guard()
@@ -238,3 +265,76 @@ def test_dashboard_status_aggregates():
     assert result["tasks"] == {"open": 1, "done": 0}
     assert result["backend"] == "ok"
     assert result["last_garmin_sync"] is None
+
+
+# --- garmin_add_workout (WP-P2-5) ------------------------------------------
+
+
+def _workout_args(**overrides: Any) -> dict[str, Any]:
+    args: dict[str, Any] = {
+        "activity_type": "running",
+        "start_time": "2026-10-14T07:15:00Z",
+        "duration_s": 2412,
+    }
+    args.update(overrides)
+    return args
+
+
+def test_garmin_add_workout_returns_activity_id():
+    tools = build()
+    result = run(
+        tools.dispatch(
+            "garmin_add_workout",
+            _workout_args(
+                distance_m=5210.5, calories=412, title="Morning Run"
+            ),
+        )
+    )
+    assert result["ok"] is True
+    assert result["workout"]["activity_id"] == "7000000001"
+    assert tools._backend.workouts == [
+        {
+            "activity_type": "running",
+            "start_time": "2026-10-14T07:15:00Z",
+            "duration_s": 2412,
+            "distance_m": 5210.5,
+            "calories": 412,
+            "title": "Morning Run",
+        }
+    ]
+
+
+def test_garmin_add_workout_requires_duration():
+    tools = build()
+    result = run(
+        tools.dispatch(
+            "garmin_add_workout",
+            {"activity_type": "running", "start_time": "2026-10-14T07:15:00Z"},
+        )
+    )
+    assert result["ok"] is False
+    assert result["error"]["code"] == "VALIDATION_ERROR"
+    assert "duration_s" in result["error"]["message"]
+    assert tools._backend.workouts == []
+
+
+def test_garmin_add_workout_rejects_extra_field():
+    tools = build()
+    result = run(tools.dispatch("garmin_add_workout", _workout_args(unexpected=1)))
+    assert result["error"]["code"] == "VALIDATION_ERROR"
+
+
+def test_garmin_unavailable_is_passed_through_not_internal():
+    tools = build(garmin_error=("GARMIN_UNAVAILABLE", True))
+    result = run(tools.dispatch("garmin_add_workout", _workout_args()))
+    assert result["ok"] is False
+    assert result["error"]["code"] == "GARMIN_UNAVAILABLE"
+    assert result["error"]["retryable"] is True
+
+
+def test_garmin_auth_failed_is_passed_through_not_retryable():
+    tools = build(garmin_error=("GARMIN_AUTH_FAILED", False))
+    result = run(tools.dispatch("garmin_add_workout", _workout_args()))
+    assert result["ok"] is False
+    assert result["error"]["code"] == "GARMIN_AUTH_FAILED"
+    assert result["error"]["retryable"] is False

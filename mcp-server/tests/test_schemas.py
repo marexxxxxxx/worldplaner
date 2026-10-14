@@ -1,4 +1,4 @@
-"""Schema-Abnahme: 8 Tools, Draft 07, additionalProperties=false (F.1/F.2)."""
+"""Schema-Abnahme: 9 Tools, Draft 07, additionalProperties=false (F.1/F.2)."""
 
 from jsonschema import Draft7Validator
 
@@ -13,13 +13,14 @@ EXPECTED_TOOLS = [
     "screen_off",
     "screen_on",
     "screen_dim",
+    "garmin_add_workout",
 ]
 
 
-def test_tools_list_has_all_eight_in_order():
+def test_tools_list_has_all_nine_in_order():
     tools = build_tools()
     assert [tool.name for tool in tools] == EXPECTED_TOOLS
-    assert len(tools) == 8
+    assert len(tools) == 9
 
 
 def test_every_input_schema_is_valid_draft7_object():
@@ -40,6 +41,7 @@ def test_required_fields_are_minimal():
     assert required["screen_off"] == []
     assert required["screen_on"] == []
     assert required["screen_dim"] == []
+    assert required["garmin_add_workout"] == ["activity_type", "start_time", "duration_s"]
 
 
 def test_read_tools_carry_readonly_hint():
