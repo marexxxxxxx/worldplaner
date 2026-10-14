@@ -6,6 +6,7 @@
 ![Python](https://img.shields.io/badge/Python-3.12%2B-3776AB?logo=python&logoColor=white)
 ![FastAPI](https://img.shields.io/badge/FastAPI-0.115%2B-009688?logo=fastapi&logoColor=white)
 ![Tests](https://img.shields.io/badge/tests-pytest%20%2B%20node%20--test-success)
+[![License: Attribution & ShareAlike](https://img.shields.io/badge/License-Attribution%20%26%20ShareAlike-blue)](LICENSE)
 
 A local, touch-operated **kiosk dashboard** for a single Dell tablet running
 Ubuntu Server. It shows weather, Garmin health data, Hermes to-dos and
@@ -356,7 +357,7 @@ BASE_URL=http://127.0.0.1:8000 CHROMIUM_PATH=/path/to/chrome npm run test:e2e:ad
 | MCP requests rejected (`401`/`403`) | Check `CF_ACCESS_TEAM_DOMAIN`, `CF_ACCESS_AUD` and `MCP_AUTH_MODE`; make sure the Access service token is configured on the Hermes side. |
 | Kiosk screen stays black after boot | Check `systemctl status kiosk-x11.service kiosk-chromium.service`; the X server and Chromium both restart automatically. |
 
-## Roadmap & license
+## Roadmap
 
 **Done**
 
@@ -370,9 +371,18 @@ BASE_URL=http://127.0.0.1:8000 CHROMIUM_PATH=/path/to/chrome npm run test:e2e:ad
 
 **Next / open**
 
-- No license has been published yet — see below.
 - Further widgets and adapters can be added without changes to the core.
 
-**License:** this repository currently ships **no `LICENSE` file**. Until one is
-added, all rights are reserved and public redistribution is not granted; add a
-license of your choice before distributing the project.
+## License
+
+Released under a custom **Attribution & ShareAlike** license — the full,
+binding text is in [`LICENSE`](LICENSE).
+
+- **Free to use:** use, copy, run and modify the project, in whole or in part,
+  including commercial and private use.
+- **Attribution and ShareAlike on redistribution:** if you pass on or publish
+  the project or a modified version, you must credit
+  `Copyright (c) 2026 Marexxxxxxx`, link to the original repository
+  <https://github.com/marexxxxxxx/worldplaner>, and keep this same license for
+  your version.
+- **No warranty:** provided "as is", without warranty of any kind.

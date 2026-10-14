@@ -6,6 +6,7 @@
 ![Python](https://img.shields.io/badge/Python-3.12%2B-3776AB?logo=python&logoColor=white)
 ![FastAPI](https://img.shields.io/badge/FastAPI-0.115%2B-009688?logo=fastapi&logoColor=white)
 ![Tests](https://img.shields.io/badge/tests-pytest%20%2B%20node%20--test-success)
+[![Lizenz: Attribution & ShareAlike](https://img.shields.io/badge/Lizenz-Attribution%20%26%20ShareAlike-blue)](LICENSE)
 
 Ein lokales, berührungsbedienbares **Kiosk-Dashboard** für ein einzelnes
 Dell-Tablet mit Ubuntu Server. Es zeigt Wetter, Garmin-Gesundheitsdaten,
@@ -364,7 +365,7 @@ BASE_URL=http://127.0.0.1:8000 CHROMIUM_PATH=/path/to/chrome npm run test:e2e:ad
 | MCP-Anfragen abgewiesen (`401`/`403`) | `CF_ACCESS_TEAM_DOMAIN`, `CF_ACCESS_AUD` und `MCP_AUTH_MODE` prüfen; das Access-Service-Token muss auf der Hermes-Seite konfiguriert sein. |
 | Kiosk-Bildschirm bleibt nach dem Boot schwarz | `systemctl status kiosk-x11.service kiosk-chromium.service` prüfen; X-Server und Chromium starten beide automatisch neu. |
 
-## Roadmap & Lizenz
+## Roadmap
 
 **Fertig**
 
@@ -379,10 +380,19 @@ BASE_URL=http://127.0.0.1:8000 CHROMIUM_PATH=/path/to/chrome npm run test:e2e:ad
 
 **Offen / als Nächstes**
 
-- Es ist noch keine Lizenz veröffentlicht — siehe unten.
 - Weitere Widgets und Adapter lassen sich ohne Änderungen am Kern ergänzen.
 
-**Lizenz:** Dieses Repository enthält derzeit **keine `LICENSE`-Datei**. Solange
-keine hinzugefügt ist, sind alle Rechte vorbehalten und eine öffentliche
-Weiterverbreitung ist nicht gestattet; vor einer Verbreitung eine Lizenz der
-eigenen Wahl ergänzen.
+## Lizenz
+
+Veröffentlicht unter einer eigenen **Attribution-&-ShareAlike**-Lizenz — der
+vollständige, verbindliche Text steht in [`LICENSE`](LICENSE).
+
+- **Freie Nutzung:** das Projekt ganz oder teilweise nutzen, kopieren, ausführen
+  und ändern, auch kommerziell und privat.
+- **Namensnennung und ShareAlike bei Weitergabe:** wer das Projekt oder eine
+  geänderte Version weitergibt oder veröffentlicht, muss
+  `Copyright (c) 2026 Marexxxxxxx` nennen, auf das Original-Repo
+  <https://github.com/marexxxxxxx/worldplaner> verlinken und dieselbe Lizenz für
+  die eigene Version beibehalten.
+- **Keine Gewährleistung:** Bereitstellung „as is", ohne Gewährleistung
+  jeglicher Art.
