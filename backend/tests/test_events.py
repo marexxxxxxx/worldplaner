@@ -52,3 +52,40 @@ def test_patch_and_delete_publish_events(client):
         assert queue.get_nowait() == ("task.deleted", {"id": created["id"]})
     finally:
         bus.unsubscribe(queue)
+
+
+# --- Fokus-Ereignisse (spec-focus D.2, WP-F1-1) -----------------------------
+
+
+def test_focus_write_and_reset_publish_events(client, conn):
+    conn.execute(
+        "INSERT INTO widgets (id, name, version, manifest_json) VALUES ('w1', 'W', '1.0.0', '{}')"
+    )
+    client.post(
+        "/api/layout",
+        json={"widget_id": "w1", "tab_id": "dashboard", "x": 0, "y": 0, "w": 2, "h": 2},
+    )
+    queue = bus.subscribe()
+    try:
+        put = client.put("/api/state/focus", json={"widget_id": "w1", "mode": "enlarge"})
+        assert put.status_code == 200
+        event, payload = queue.get_nowait()
+        assert event == "focus.changed"
+        assert payload == {"focus": put.json()["focus"]}
+
+        client.delete("/api/state/focus")
+        assert queue.get_nowait() == ("focus.changed", {"focus": None})
+    finally:
+        bus.unsubscribe(queue)
+
+
+def test_event_stream_delivers_focus_changed():
+    async def run() -> str:
+        stream = event_stream(FakeRequest())
+        assert await stream.__anext__() == ": ping\n\n"
+        bus.publish("focus.changed", {"focus": None})
+        event = await stream.__anext__()
+        await stream.aclose()
+        return event
+
+    assert asyncio.run(run()) == 'event: focus.changed\ndata: {"focus": null}\n\n'

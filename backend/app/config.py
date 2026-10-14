@@ -2,6 +2,7 @@
 
 from functools import lru_cache
 
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -65,6 +66,11 @@ class Settings(BaseSettings):
     widgets_install_dir: str = "/data/widgets"
     widgets_max_zip_bytes: int = 10485760
     widgets_max_uncompressed_bytes: int = 52428800
+
+    # Dashboard-Fokus (WP-F1-1, spec-focus C/D3): Auto-Reset-Dauer in Sekunden.
+    # `0` deaktiviert den Auto-Reset; das Frontend liest den Wert ueber
+    # `/api/config` (`focus_auto_reset_seconds`).
+    focus_auto_reset_seconds: int = Field(default=300, ge=0)
 
 
 @lru_cache

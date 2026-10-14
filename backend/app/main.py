@@ -113,6 +113,7 @@ def create_app() -> FastAPI:
                 for row in tab_rows
             ],
             "active_tab": active_tab,
+            "focus_auto_reset_seconds": settings.focus_auto_reset_seconds,
         }
 
     # `install` vor `widgets`: sonst faengt `GET/PATCH /widgets/{widget_id}` den

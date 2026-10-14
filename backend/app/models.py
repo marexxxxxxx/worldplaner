@@ -124,6 +124,22 @@ class StateUpdate(BaseModel):
     value: str
 
 
+class FocusUpdate(BaseModel):
+    """Payload fuer `PUT /api/state/focus` (spec-focus D.1, WP-F1-1).
+
+    `instance_id` ist die `dashboard_layout.id` der Ziel-Instanz — im Fokus-Objekt
+    heisst das Feld `instance_id`, waehrend `GET /api/layout` dasselbe Feld `id`
+    nennt. Ohne `instance_id` loest das Backend die erste Layout-Instanz des
+    Widgets ueber alle Tabs auf.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    widget_id: str = Field(min_length=1)
+    mode: Literal["highlight", "enlarge", "fullscreen"]
+    instance_id: str | None = None
+
+
 # --- Garmin-Schreibpfad (WP-P2-5) ------------------------------------------
 
 
