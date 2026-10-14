@@ -70,6 +70,7 @@ export const api = {
   patchWidget: (id, patch) =>
     request(`/api/widgets/${encodeURIComponent(id)}`, { method: "PATCH", body: patch }),
   getLayout: (tab) => request(`/api/layout?tab=${encodeURIComponent(tab)}`),
+  createLayout: (payload) => request("/api/layout", { method: "POST", body: payload }),
   updateLayout: (instanceId, patch) =>
     request(`/api/layout/${encodeURIComponent(instanceId)}`, { method: "PUT", body: patch }),
   getTasks: (status = "open", limit = 100) =>

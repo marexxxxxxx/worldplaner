@@ -142,6 +142,7 @@ class DashboardApp {
     this.manifestCache = new Map();
     this.grid = { columns: 12, row_height_px: 96, gap_px: 8 };
     this.views = new Map();
+    this.grids = new Map();
     this.activeSlug = null;
     this.tabButtons = new Map();
   }
@@ -238,8 +239,9 @@ class DashboardApp {
       gap: this.grid.gap_px,
       minSizes,
       log: this.log,
-      persist: (instance, rect) => api.updateLayout(instance.id, rect),
+      persist: (instance, rect) => this.persistPlacement(slug, instance, rect),
     });
+    this.grids.set(slug, bento);
 
     for (const instance of instances) {
       const body = bento.add({
@@ -332,6 +334,20 @@ class DashboardApp {
   pollMs(widgetId) {
     const def = BUILTIN_WIDGETS.find((entry) => entry.id === widgetId);
     return def?.pollMs ?? 0;
+  }
+
+  /**
+   * Platzierung speichern. Standardinstanzen ohne Layout-Zeile (Backend-Seed
+   * aus Abschnitt C fehlt noch) werden beim ersten Verschieben angelegt (POST),
+   * danach per PUT aktualisiert. Gibt die gespeicherte Instanz zurück — die
+   * Bento-Grid-Engine übernimmt eine ggf. neue Instanz-ID.
+   */
+  persistPlacement(tabId, instance, rect) {
+    const body = { ...rect, config_override: instance.config_override ?? {} };
+    if (String(instance.id).startsWith("builtin:")) {
+      return api.createLayout({ widget_id: instance.widget_id, tab_id: tabId, ...body });
+    }
+    return api.updateLayout(instance.id, body);
   }
 
   async buildWidgetAdmin(section) {

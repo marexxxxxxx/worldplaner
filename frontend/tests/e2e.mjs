@@ -289,12 +289,48 @@ try {
   await touchPage.screenshot({ path: `${SHOT_DIR}/03-touch-tap.png` });
   await touchContext.close();
 
+  // Layout-Persistenz (D.3/E.6). Ist die Widget-Registry noch nicht geseedet
+  // (Abschnitt C, Aufgabe von WP-2), lehnt `POST /api/layout` mit 404 ab; das
+  // Frontend muss das weich abfangen (kein Host-Absturz).
+  const registry = await api("/api/widgets");
+  const layoutFirst = await page.evaluate(async () => {
+    const grid = window.worldplaner.app.grids.get("todos");
+    const key = [...grid.entries.keys()][0];
+    grid.applyLayout(key, { x: 0, y: 0, w: 12, h: 7 });
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    return { key, rekeyed: [...grid.entries.keys()][0] };
+  });
+  await page.evaluate(async (key) => {
+    const grid = window.worldplaner.app.grids.get("todos");
+    grid.applyLayout(key, { x: 0, y: 0, w: 12, h: 5 });
+    await new Promise((resolve) => setTimeout(resolve, 500));
+  }, layoutFirst.rekeyed);
+  const layoutRows = await api("/api/layout?tab=todos");
+  const errorsSoFar = pageErrors.length;
+  if (registry.body.length > 0) {
+    check(
+      "Layout-Persistenz erst POST (neue Zeile), dann PUT (E.6/D.3)",
+      layoutRows.body.length === 1 &&
+        layoutRows.body[0].widget_id === "hermes-todos" &&
+        layoutRows.body[0].h === 5,
+      `first=${JSON.stringify(layoutFirst)} rows=${JSON.stringify(layoutRows.body)}`,
+    );
+  } else {
+    check(
+      "Layout-Persistenz degradiert weich (Widget-Registry nicht geseedet)",
+      layoutRows.body.length === 0 && errorsSoFar === 0,
+      `rows=${JSON.stringify(layoutRows.body)} pageErrors=${errorsSoFar}`,
+    );
+  }
+
   // (1) destroy
   await page.reload({ waitUntil: "networkidle" });
   await page.waitForFunction(() => window.worldplaner, null, { timeout: 10000 });
   const destroyResult = await page.evaluate(() => {
     const runtime = window.worldplaner.runtime;
-    const key = [...runtime.instances.keys()].find((entry) => entry.includes("hermes-todos"));
+    const key =
+      [...runtime.instances.keys()].find((entry) => entry.includes("hermes-todos")) ??
+      [...runtime.instances.entries()].find(([, value]) => value.widgetId === "hermes-todos")?.[0];
     const entry = runtime.instances.get(key);
     const container = entry.container;
     runtime.destroy(entry);

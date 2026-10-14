@@ -279,10 +279,43 @@ export class BentoGrid {
     if (typeof this.persist === "function") {
       Promise.resolve(
         this.persist(next, { x: next.x, y: next.y, w: next.w, h: next.h }),
-      ).catch((error) => {
-        this.log?.warn?.(`[bento:${this.tabId}] Speichern fehlgeschlagen`, error);
-      });
+      )
+        .then((saved) => this._rekey(entry, saved))
+        .catch((error) => {
+          this.log?.warn?.(`[bento:${this.tabId}] Speichern fehlgeschlagen`, error);
+        });
     }
     return true;
+  }
+
+  /**
+   * Programmatisches Platzieren (auch für Tests/Keyboard): validiert wie ein
+   * Drag und persistiert. `id` kann sich ändern, wenn erst eine Layout-Zeile
+   * angelegt werden musste (Standardplatzierung ohne Backend-Seed).
+   */
+  applyLayout(instanceId, rect) {
+    const entry = this.entries.get(instanceId);
+    if (!entry) {
+      return false;
+    }
+    return this._commit(entry, { ...entry.instance, ...rect });
+  }
+
+  /** Nach dem ersten Persistieren kann das Backend eine neue Instanz-ID liefern. */
+  _rekey(entry, saved) {
+    if (!saved || !saved.id || saved.id === entry.instance.id) {
+      return;
+    }
+    this.entries.delete(entry.instance.id);
+    entry.instance = {
+      ...entry.instance,
+      id: saved.id,
+      x: saved.x ?? entry.instance.x,
+      y: saved.y ?? entry.instance.y,
+      w: saved.w ?? entry.instance.w,
+      h: saved.h ?? entry.instance.h,
+    };
+    entry.node.dataset.instanceId = saved.id;
+    this.entries.set(saved.id, entry);
   }
 }
