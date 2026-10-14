@@ -15,7 +15,19 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from . import db
 from .config import get_settings
 from .models import ApiError
-from .routers import events, garmin, layout, state, tasks, weather, widgets
+from .routers import (
+    baikal,
+    events,
+    garmin,
+    grocy,
+    install,
+    layout,
+    mealie,
+    state,
+    tasks,
+    weather,
+    widgets,
+)
 
 STATUS_TO_CODE = {
     400: "VALIDATION_ERROR",
@@ -103,24 +115,59 @@ def create_app() -> FastAPI:
             "active_tab": active_tab,
         }
 
-    for module in (widgets, layout, tasks, garmin, weather, state, events):
+    # `install` vor `widgets`: sonst faengt `GET/PATCH /widgets/{widget_id}` den
+    # Pfad `POST /widgets/install` ab und antwortet mit 405 (siehe
+    # `routers/install.py`).
+    for module in (
+        install,
+        baikal,
+        grocy,
+        mealie,
+        widgets,
+        layout,
+        tasks,
+        garmin,
+        weather,
+        state,
+        events,
+    ):
         app.include_router(module.router, prefix="/api")
 
     _mount_static(app)
     return app
 
 
-def _mount_static(app: FastAPI) -> None:
-    """Frontend/Widgets werden vom Backend ausgeliefert (D.10), sobald vorhanden.
+class _MultiDirStaticFiles(StaticFiles):
+    """`StaticFiles` mit Fallback ueber mehrere Wurzelordner (in Reihenfolge).
 
-    In diesem Work-Package existieren die Verzeichnisse noch nicht; der Mount
-    greift, sobald WP-3/WP-4/WP-6 sie anlegen.
+    Wird fuer `/widgets` genutzt: installierte Widgets (`WIDGETS_INSTALL_DIR`)
+    zuerst, dann die eingebauten (`widgets/`). Starlettes `lookup_path` probiert
+    bereits alle Eintraege in `all_directories` durch, daher genuegt das Setzen
+    der Liste.
+    """
+
+    def __init__(self, directories: list[str]) -> None:
+        super().__init__(directory=directories[0])
+        self.all_directories = list(directories)
+
+
+def _mount_static(app: FastAPI) -> None:
+    """Frontend/Widgets werden vom Backend ausgeliefert (D.10).
+
+    Eingebaute Widgets liegen read-only unter `widgets/`, installierte unter
+    `WIDGETS_INSTALL_DIR` (Volume `widgets-data`, WP-P2-4/D18). Beide werden
+    unter `/widgets/<id>/…` ausgeliefert; fehlt das Installationsverzeichnis,
+    greifen nur die eingebauten.
     """
     project_root = Path(__file__).resolve().parent.parent.parent
     widgets_dir = project_root / "widgets"
     frontend_dir = project_root / "frontend"
-    if widgets_dir.is_dir():
-        app.mount("/widgets", StaticFiles(directory=str(widgets_dir)), name="widgets")
+    install_dir = Path(get_settings().widgets_install_dir)
+    widget_roots = [
+        str(path) for path in (install_dir, widgets_dir) if path.is_dir()
+    ]
+    if widget_roots:
+        app.mount("/widgets", _MultiDirStaticFiles(widget_roots), name="widgets")
     if frontend_dir.is_dir():
         app.mount("/", StaticFiles(directory=str(frontend_dir), html=True), name="frontend")
 

@@ -7,6 +7,7 @@ WORKDIR /app
 
 COPY pyproject.toml ./
 COPY sync.py ./
+COPY write_server.py ./
 RUN pip install .
 
 # Einziger Schreiber von garmin_cache (A.2/D4); Token-Volume unter /data/token (G.3).

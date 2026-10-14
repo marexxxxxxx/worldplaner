@@ -9,6 +9,9 @@ services:
     ports: ["127.0.0.1:${BACKEND_PORT:-8000}:8000"]
     volumes:
       - sqlite-data:/data
+      # Installierte Widgets liegen in einem eigenen Schreib-Volume
+      # (`/data/widgets`); eingebaute bleiben read-only (WP-P2-4/D18).
+      - widgets-data:/data/widgets
       # Frontend + Widgets werden vom Backend ausgeliefert (D10). Im Container
       # liegt `backend/app/main.py` unter /app/app -> project_root ist "/",
       # deshalb werden die Verzeichnisse dort eingehängt (K2/WP-3).
@@ -19,6 +22,9 @@ services:
         required: false
     environment:
       - SQLITE_PATH=/data/dashboard.db
+      - WIDGETS_INSTALL_DIR=/data/widgets
+      # Interner Write-Endpunkt von garmin-sync (WP-P2-5; kein Host-Port).
+      - GARMIN_SYNC_WRITE_URL=http://garmin-sync:8002
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/api/health"]
       interval: 30s
@@ -61,11 +67,24 @@ services:
       # Nur Verifikation ohne echten Account: GARMIN_SYNC_MOCK=1 schreibt
       # synthetische Cache-Zeilen im Schema G.5 (Default 0 = echter Client).
       - GARMIN_SYNC_MOCK=${GARMIN_SYNC_MOCK:-0}
+      # Interner Schreib-Endpunkt (WP-P2-5): nur im Compose-Netz, KEIN Host-Port.
+      - GARMIN_WRITE_HOST=0.0.0.0
+      - GARMIN_WRITE_PORT=8002
     # Erst schreiben, wenn das Backend das Schema angelegt hat (C/A.2).
     depends_on:
       backend:
         condition: service_healthy
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - import urllib.request; urllib.request.urlopen('http://localhost:8002/healthz')
+      interval: 30s
+      timeout: 5s
+      retries: 3
 
 volumes:
   sqlite-data:
   garmin-token:
+  widgets-data:

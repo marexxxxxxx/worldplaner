@@ -240,6 +240,7 @@ def test_zip_not_a_zip_rejected(install_client, install_env):
 
 def test_zip_over_max_bytes_rejected(install_client, install_env, monkeypatch):
     monkeypatch.setenv("WIDGETS_MAX_ZIP_BYTES", "10")
+    get_settings.cache_clear()
     response = _post_zip(install_client, widget_zip())
     assert response.status_code == 400
     assert list(install_env.iterdir()) == []
