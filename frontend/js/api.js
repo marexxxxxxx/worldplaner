@@ -21,8 +21,13 @@ export class ApiError extends Error {
 async function request(path, { method = "GET", body, signal, headers = {} } = {}) {
   const init = { method, headers: { Accept: "application/json", ...headers }, signal };
   if (body !== undefined) {
-    init.headers["Content-Type"] = "application/json";
-    init.body = JSON.stringify(body);
+    if (body instanceof FormData) {
+      // Multipart: der Browser setzt den Content-Type samt Boundary selbst.
+      init.body = body;
+    } else {
+      init.headers["Content-Type"] = "application/json";
+      init.body = JSON.stringify(body);
+    }
   }
 
   let response;
@@ -69,6 +74,15 @@ export const api = {
   getWidget: (id) => request(`/api/widgets/${encodeURIComponent(id)}`),
   patchWidget: (id, patch) =>
     request(`/api/widgets/${encodeURIComponent(id)}`, { method: "PATCH", body: patch }),
+  installWidget: (file) => {
+    const form = new FormData();
+    form.append("file", file);
+    return request("/api/widgets/install", { method: "POST", body: form });
+  },
+  installWidgetGit: (url, ref = "main") =>
+    request("/api/widgets/install/git", { method: "POST", body: { url, ref } }),
+  uninstallWidget: (id) =>
+    request(`/api/widgets/${encodeURIComponent(id)}`, { method: "DELETE" }),
   getLayout: (tab) => request(`/api/layout?tab=${encodeURIComponent(tab)}`),
   createLayout: (payload) => request("/api/layout", { method: "POST", body: payload }),
   updateLayout: (instanceId, patch) =>

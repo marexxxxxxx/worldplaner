@@ -354,6 +354,81 @@ button {
   opacity: 0.55;
 }
 
+/* --- Widget-Installation (WP-P2-4) --------------------------------------- */
+
+.widget-install {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-width: 720px;
+  margin: 0 8px 16px;
+}
+
+.widget-install__form {
+  display: flex;
+  align-items: flex-end;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 12px 16px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  background: var(--cell-a);
+}
+
+.widget-install__label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 13px;
+  color: var(--text-secondary);
+  min-width: 0;
+}
+
+.widget-install__label--ref {
+  max-width: 140px;
+}
+
+.widget-install__input {
+  min-height: var(--tap-target);
+  padding: 0 12px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-control);
+  background: var(--bg);
+  color: var(--text-primary);
+  font-size: 15px;
+}
+
+.widget-install__submit {
+  min-height: var(--tap-target);
+  padding: 0 18px;
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-control);
+  background: var(--accent-soft);
+  color: var(--text-primary);
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.widget-install__submit:disabled {
+  opacity: 0.55;
+}
+
+.widget-admin__uninstall {
+  flex: none;
+  min-height: var(--tap-target);
+  padding: 0 14px;
+  border: 1px solid var(--danger);
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: var(--danger);
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.widget-admin__uninstall:disabled {
+  opacity: 0.55;
+}
+
 /* --- Barrierefreiheit ----------------------------------------------------- */
 
 @media (prefers-reduced-motion: reduce) {

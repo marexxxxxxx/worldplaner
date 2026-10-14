@@ -383,10 +383,6 @@ class DashboardApp {
    * `dashboard`-Tab verschwindet und ein reaktiviertes wieder erscheint.
    */
   async buildWidgetAdmin(section) {
-    const registry = await safeGetWidgets();
-    const hasRegistry = Array.isArray(registry) && registry.length > 0;
-    this.widgetRegistry = hasRegistry ? registry : null;
-
     const head = document.createElement("div");
     head.className = "widget-admin__head";
 
@@ -401,8 +397,141 @@ class DashboardApp {
 
     head.append(title, status);
 
-    const list = document.createElement("ul");
-    list.className = "widget-admin";
+    this.widgetListEl = document.createElement("ul");
+    this.widgetListEl.className = "widget-admin";
+    this.widgetStatusEl = status;
+    this.widgetEmptyNote = document.createElement("p");
+    this.widgetEmptyNote.className = "empty-state";
+    this.widgetEmptyNote.textContent =
+      "Backend-Registry noch leer (Widget-Seed fehlt). Aktivieren/Deaktivieren ist erst möglich, wenn GET /api/widgets Zeilen liefert.";
+
+    section.append(
+      head,
+      this.buildInstallForms(status),
+      this.widgetListEl,
+      this.widgetEmptyNote,
+    );
+    await this.reloadWidgets();
+  }
+
+  /**
+   * Installations-UI (WP-P2-4): Zip-Upload und Git-URL. Ein erfolgreicher
+   * Aufruf registriert das Widget (`is_builtin=0`) und baut Liste/Ansichten neu.
+   */
+  buildInstallForms(status) {
+    const wrapper = document.createElement("div");
+    wrapper.className = "widget-install";
+    wrapper.append(this.buildZipInstallForm(status), this.buildGitInstallForm(status));
+    return wrapper;
+  }
+
+  buildZipInstallForm(status) {
+    const form = document.createElement("form");
+    form.className = "widget-install__form";
+    form.setAttribute("aria-label", "Widget aus Zip installieren");
+
+    const label = document.createElement("label");
+    label.className = "widget-install__label";
+    label.textContent = "Widget-Zip";
+
+    const input = document.createElement("input");
+    input.type = "file";
+    input.name = "file";
+    input.accept = ".zip,application/zip";
+    input.className = "widget-install__input";
+    label.append(input);
+
+    const submit = document.createElement("button");
+    submit.type = "submit";
+    submit.className = "widget-install__submit";
+    submit.textContent = "Zip installieren";
+
+    form.append(label, submit);
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const file = input.files?.[0];
+      if (!file) {
+        status.textContent = "Bitte zuerst eine Zip-Datei auswählen.";
+        return;
+      }
+      submit.disabled = true;
+      status.textContent = "Zip wird installiert…";
+      try {
+        const created = await api.installWidget(file);
+        form.reset();
+        await this.reloadWidgets();
+        await this.refreshDataViews();
+        status.textContent = `Widget „${created?.widget?.id ?? file.name}“ installiert.`;
+      } catch (error) {
+        status.textContent = `Installation fehlgeschlagen – ${error?.message || error}`;
+        this.log?.error?.("[app] Zip-Installation fehlgeschlagen", error);
+      } finally {
+        submit.disabled = false;
+      }
+    });
+    return form;
+  }
+
+  buildGitInstallForm(status) {
+    const form = document.createElement("form");
+    form.className = "widget-install__form";
+    form.setAttribute("aria-label", "Widget aus Git installieren");
+
+    const urlLabel = document.createElement("label");
+    urlLabel.className = "widget-install__label";
+    urlLabel.textContent = "Git-URL";
+    const urlInput = document.createElement("input");
+    urlInput.type = "url";
+    urlInput.name = "url";
+    urlInput.required = true;
+    urlInput.placeholder = "https://…/widget.git";
+    urlInput.className = "widget-install__input";
+    urlLabel.append(urlInput);
+
+    const refLabel = document.createElement("label");
+    refLabel.className = "widget-install__label widget-install__label--ref";
+    refLabel.textContent = "Branch/Tag";
+    const refInput = document.createElement("input");
+    refInput.type = "text";
+    refInput.name = "ref";
+    refInput.value = "main";
+    refInput.className = "widget-install__input";
+    refLabel.append(refInput);
+
+    const submit = document.createElement("button");
+    submit.type = "submit";
+    submit.className = "widget-install__submit";
+    submit.textContent = "Von Git installieren";
+
+    form.append(urlLabel, refLabel, submit);
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      submit.disabled = true;
+      status.textContent = "Git-Repository wird installiert…";
+      try {
+        const created = await api.installWidgetGit(urlInput.value.trim(), refInput.value.trim() || "main");
+        await this.reloadWidgets();
+        await this.refreshDataViews();
+        status.textContent = `Widget „${created?.widget?.id ?? "?"}“ installiert.`;
+      } catch (error) {
+        status.textContent = `Installation fehlgeschlagen – ${error?.message || error}`;
+        this.log?.error?.("[app] Git-Installation fehlgeschlagen", error);
+      } finally {
+        submit.disabled = false;
+      }
+    });
+    return form;
+  }
+
+  /** Registry neu laden und Liste (inkl. Deinstallieren) neu aufbauen. */
+  async reloadWidgets() {
+    const registry = await safeGetWidgets();
+    const hasRegistry = Array.isArray(registry) && registry.length > 0;
+    this.widgetRegistry = hasRegistry ? registry : null;
+
+    const list = this.widgetListEl;
+    const status = this.widgetStatusEl;
+    list.replaceChildren();
 
     if (hasRegistry) {
       for (const widget of registry) {
@@ -428,15 +557,9 @@ class DashboardApp {
       }
     }
 
-    section.append(head, list);
     this.renderWidgetStatus(status);
-
-    if (!hasRegistry) {
-      const note = document.createElement("p");
-      note.className = "empty-state";
-      note.textContent =
-        "Backend-Registry noch leer (Widget-Seed fehlt). Aktivieren/Deaktivieren ist erst möglich, wenn GET /api/widgets Zeilen liefert.";
-      section.append(note);
+    if (this.widgetEmptyNote) {
+      this.widgetEmptyNote.hidden = hasRegistry;
     }
   }
 
@@ -478,8 +601,38 @@ class DashboardApp {
       toggle.setAttribute("aria-label", `Widget ${widget.id}: Zustand nicht verfügbar`);
     }
 
+    // Deinstallation nur für installierte (nicht eingebaute) Widgets (WP-P2-4).
+    if (interactive && !widget.is_builtin) {
+      const uninstall = document.createElement("button");
+      uninstall.type = "button";
+      uninstall.className = "widget-admin__uninstall";
+      uninstall.textContent = "Deinstallieren";
+      uninstall.setAttribute("aria-label", `Widget ${widget.name || widget.id} deinstallieren`);
+      uninstall.addEventListener("click", () =>
+        this.uninstallWidget(widget, { status, button: uninstall }),
+      );
+      item.append(info, uninstall, toggle);
+      return item;
+    }
+
     item.append(info, toggle);
     return item;
+  }
+
+  /** Deinstalliert ein installiertes Widget (`DELETE /api/widgets/{id}`). */
+  async uninstallWidget(widget, { status, button }) {
+    button.disabled = true;
+    status.textContent = `${widget.name || widget.id} wird deinstalliert…`;
+    try {
+      await api.uninstallWidget(widget.id);
+      await this.reloadWidgets();
+      await this.refreshDataViews();
+      status.textContent = `${widget.name || widget.id} deinstalliert.`;
+    } catch (error) {
+      button.disabled = false;
+      status.textContent = `${widget.name || widget.id}: Deinstallation fehlgeschlagen – ${error?.message || error}`;
+      this.log?.error?.(`[app] Widget ${widget.id} deinstallieren fehlgeschlagen`, error);
+    }
   }
 
   /** Zustand trägt Form + Text, nicht nur Farbe (I.2, graustufenfest). */
