@@ -8,8 +8,9 @@ Dieser Stand umfasst **K1 / WP-2** (Docker Compose, SQLite-Schema, FastAPI-Backe
 Abschnitte B, C, D, H), **K4** (Betriebsartefakte, Abschnitt J),
 **K2 / WP-3 + WP-7** (Widget-Runtime und Hermes-To-Do-Tab, Abschnitte E, I),
 **WP-4** (Wetter-Widget, D.6/E),
-**WP-6** (Garmin-Widgets Schlaf/Readiness/Workout/Vitalwerte, D.5/G.5/E) und
-**K3 / WP-8** (MCP-Server über Streamable HTTP, Abschnitt F).
+**WP-6** (Garmin-Widgets Schlaf/Readiness/Workout/Vitalwerte, D.5/G.5/E),
+**K3 / WP-8** (MCP-Server über Streamable HTTP, Abschnitt F) und
+**WP-9** (Widget-Verwaltung: Aktivieren/Deaktivieren, Abschnitt I.3/D.2).
 
 ## Umfang dieses Stands
 
@@ -29,7 +30,9 @@ Enthalten:
 - `deploy/` — systemd-Units und Display-Skripte
 - `docs/setup.md` — Setup-Checkliste
 
-Noch **nicht** enthalten (eigenes Work-Package): Widget-Verwaltung (WP-9).
+Noch **nicht** enthalten: Zip-/Git-Installation von Widgets (Phase 2, eigener
+Endpunkt) — die Verwaltung beschränkt sich auf Aktivieren/Deaktivieren und
+Config.
 
 ## Voraussetzungen
 
@@ -92,7 +95,10 @@ Das Backend liefert Frontend und Widgets unter derselben Origin aus (D10):
   Permission-Gate (E.4/E.5).
 - `frontend/js/bento.js` — Bento-Grid (12 Spalten, 96 px Zeilenhöhe, 8 px Gap,
   Touch-Verschieben per Long-Press).
-- `frontend/js/app.js` — Bootstrap, Tab-Routing, SSE-Client mit Backoff (D.8).
+- `frontend/js/app.js` — Bootstrap, Tab-Routing, SSE-Client mit Backoff (D.8) und
+  die Widget-Verwaltung im `widgets`-Tab (WP-9): listet `GET /api/widgets` und
+  schaltet `is_enabled` über `PATCH /api/widgets/{id}` persistent um; ein
+  deaktiviertes Widget wird im `dashboard`-Tab nicht mehr gerendert.
 - `widgets/hermes-todos/` — To-Do-Liste mit Abhaken (`PATCH /api/tasks/{id}`
   inkl. `base_version`) und Live-Aktualisierung per SSE (WP-7).
 - `widgets/weather/` — Wetter-Kachel (`GET /api/weather/current`: Temperatur,
@@ -111,6 +117,8 @@ npm test        # Unit-Tests der Grid-Engine (node --test)
 
 # E2E gegen den laufenden Stack:
 BASE_URL=http://127.0.0.1:8000 CHROMIUM_PATH=/pfad/zu/chrome npm run test:e2e
+# WP-9 Widget-Verwaltung (benötigt geseedete Registry, MARAAA-16):
+BASE_URL=http://127.0.0.1:8000 CHROMIUM_PATH=/pfad/zu/chrome npm run test:e2e:admin
 ```
 
 ## MCP-Server (K3 / WP-8, Spezifikation F)

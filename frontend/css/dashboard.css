@@ -246,7 +246,30 @@ button {
   font-variant-numeric: tabular-nums;
 }
 
-/* --- Widget-Verwaltung (Platzhalter für WP-9) ---------------------------- */
+/* --- Widget-Verwaltung (WP-9) -------------------------------------------- */
+
+.widget-admin__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  max-width: 720px;
+  margin: 8px 8px 12px;
+}
+
+.widget-admin__title {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.widget-admin__status {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+}
 
 .widget-admin {
   list-style: none;
@@ -260,14 +283,22 @@ button {
 
 .widget-admin__item {
   display: flex;
-  flex-direction: column;
-  gap: 2px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
   min-height: var(--tap-target);
-  justify-content: center;
-  padding: 10px 16px;
+  padding: 8px 8px 8px 16px;
   border: 1px solid var(--line);
   border-radius: var(--radius-control);
   background: var(--cell-a);
+}
+
+.widget-admin__info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
 }
 
 .widget-admin__name {
@@ -278,6 +309,49 @@ button {
 .widget-admin__meta {
   color: var(--text-secondary);
   font-size: 13px;
+}
+
+/* Schalter: Tap-Ziel >= 44x44, Zustand über Füllung + Text (graustufenfest),
+   keine Hover-Abhängigkeit (I.3). */
+.widget-admin__toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  flex: none;
+  min-height: var(--tap-target);
+  min-width: 136px;
+  padding: 0 14px;
+  border-radius: var(--radius-control);
+  border: 1px solid var(--line-strong);
+  background: var(--bg);
+  color: var(--text-secondary);
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.widget-admin__toggle::before {
+  content: "";
+  flex: none;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  border: 2px solid currentColor;
+  background: transparent;
+}
+
+.widget-admin__toggle[data-state="on"] {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--text-primary);
+}
+
+.widget-admin__toggle[data-state="on"]::before {
+  border-color: var(--accent);
+  background: var(--accent);
+}
+
+.widget-admin__toggle:disabled {
+  opacity: 0.55;
 }
 
 /* --- Barrierefreiheit ----------------------------------------------------- */

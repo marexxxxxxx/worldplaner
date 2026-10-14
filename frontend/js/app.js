@@ -36,6 +36,14 @@ const BUILTIN_WIDGETS = [
 const WIDGETS_TAB = "widgets";
 const SSE_EVENTS = ["task.created", "task.updated", "task.deleted", "screen.changed"];
 
+/** Anzeigenamen der Manifest-Kategorien (Spezifikation E.2). */
+const CATEGORY_LABELS = {
+  weather: "Wetter",
+  health: "Gesundheit",
+  productivity: "Produktivität",
+  general: "Allgemein",
+};
+
 /** Minimaler Pub/Sub für SSE-Events (Widgets abonnieren hierüber, E.5). */
 class EventBus {
   constructor() {
@@ -158,6 +166,7 @@ class DashboardApp {
     this.grids = new Map();
     this.activeSlug = null;
     this.tabButtons = new Map();
+    this.widgetRegistry = null;
   }
 
   async start() {
@@ -366,53 +375,184 @@ class DashboardApp {
     return api.updateLayout(instance.id, body);
   }
 
+  /**
+   * Widget-Verwaltung (WP-9). Listet alle Zeilen aus `GET /api/widgets` mit
+   * Name, Version, Kategorie und Zustand und schaltet `is_enabled` über
+   * `PATCH /api/widgets/{id}` persistent um. Nach jedem Umschalten werden die
+   * Daten-Tabs neu aufgebaut, damit ein deaktiviertes Widget sofort aus dem
+   * `dashboard`-Tab verschwindet und ein reaktiviertes wieder erscheint.
+   */
   async buildWidgetAdmin(section) {
     const registry = await safeGetWidgets();
-    const rows =
-      Array.isArray(registry) && registry.length > 0
-        ? registry
-        : BUILTIN_WIDGETS.map((def) => ({
-            id: def.id,
-            name: def.id,
-            version: "",
-            category: "",
-            is_enabled: true,
-            is_builtin: true,
-          }));
+    const hasRegistry = Array.isArray(registry) && registry.length > 0;
+    this.widgetRegistry = hasRegistry ? registry : null;
+
+    const head = document.createElement("div");
+    head.className = "widget-admin__head";
+
+    const title = document.createElement("h2");
+    title.className = "widget-admin__title";
+    title.textContent = "Installierte Widgets";
+
+    const status = document.createElement("p");
+    status.className = "widget-admin__status";
+    status.setAttribute("role", "status");
+    status.setAttribute("aria-live", "polite");
+
+    head.append(title, status);
 
     const list = document.createElement("ul");
     list.className = "widget-admin";
-    for (const widget of rows) {
-      const item = document.createElement("li");
-      item.className = "widget-admin__item";
 
-      const name = document.createElement("span");
-      name.className = "widget-admin__name";
-      name.textContent = widget.name || widget.id;
-
-      const meta = document.createElement("span");
-      meta.className = "widget-admin__meta";
-      meta.textContent = [
-        widget.id,
-        widget.version,
-        widget.category,
-        widget.is_enabled === false ? "deaktiviert" : "aktiv",
-      ]
-        .filter(Boolean)
-        .join(" · ");
-
-      item.append(name, meta);
-      list.append(item);
+    if (hasRegistry) {
+      for (const widget of registry) {
+        list.append(this.buildWidgetRow(widget, { status, interactive: true }));
+      }
+    } else {
+      // Keine Registry-Zeilen: nur die eingebauten Platzhalter zeigen, ohne
+      // Schalter – PATCH hätte kein Ziel (Datenquelle fehlt sichtbar gemacht).
+      for (const def of BUILTIN_WIDGETS) {
+        list.append(
+          this.buildWidgetRow(
+            {
+              id: def.id,
+              name: def.id,
+              version: "",
+              category: "",
+              is_enabled: true,
+              is_builtin: true,
+            },
+            { status, interactive: false },
+          ),
+        );
+      }
     }
-    section.append(list);
 
-    if (!Array.isArray(registry) || registry.length === 0) {
+    section.append(head, list);
+    this.renderWidgetStatus(status);
+
+    if (!hasRegistry) {
       const note = document.createElement("p");
       note.className = "empty-state";
       note.textContent =
-        "Backend-Registry noch leer; Aktivieren/Deaktivieren folgt in Work-Package WP-9.";
+        "Backend-Registry noch leer (Widget-Seed fehlt). Aktivieren/Deaktivieren ist erst möglich, wenn GET /api/widgets Zeilen liefert.";
       section.append(note);
     }
+  }
+
+  /** Eine Verwaltungszeile: Name/Meta links, Tap-Schalter rechts (>= 44x44). */
+  buildWidgetRow(widget, { status, interactive }) {
+    const item = document.createElement("li");
+    item.className = "widget-admin__item";
+    item.dataset.widgetId = widget.id;
+
+    const info = document.createElement("div");
+    info.className = "widget-admin__info";
+
+    const name = document.createElement("span");
+    name.className = "widget-admin__name";
+    name.textContent = widget.name || widget.id;
+
+    const meta = document.createElement("span");
+    meta.className = "widget-admin__meta";
+    meta.textContent = [
+      widget.id,
+      widget.version ? `v${widget.version}` : null,
+      widget.category ? CATEGORY_LABELS[widget.category] || widget.category : null,
+      widget.is_builtin ? "eingebaut" : null,
+    ]
+      .filter(Boolean)
+      .join(" · ");
+
+    info.append(name, meta);
+
+    const toggle = document.createElement("button");
+    toggle.type = "button";
+    toggle.className = "widget-admin__toggle";
+    toggle.setAttribute("role", "switch");
+    toggle.disabled = !interactive;
+    this.renderToggleState(toggle, widget.is_enabled !== false);
+    if (interactive) {
+      toggle.addEventListener("click", () => this.toggleWidget(widget, { toggle, status }));
+    } else {
+      toggle.setAttribute("aria-label", `Widget ${widget.id}: Zustand nicht verfügbar`);
+    }
+
+    item.append(info, toggle);
+    return item;
+  }
+
+  /** Zustand trägt Form + Text, nicht nur Farbe (I.2, graustufenfest). */
+  renderToggleState(toggle, enabled) {
+    toggle.dataset.state = enabled ? "on" : "off";
+    toggle.setAttribute("aria-checked", enabled ? "true" : "false");
+    toggle.setAttribute(
+      "aria-label",
+      enabled ? "Aktiv – zum Deaktivieren tippen" : "Deaktiviert – zum Aktivieren tippen",
+    );
+    toggle.textContent = enabled ? "Aktiv" : "Deaktiviert";
+  }
+
+  /** Schaltet `is_enabled` persistent um (PATCH /api/widgets/{id}). */
+  async toggleWidget(widget, { toggle, status }) {
+    const previous = widget.is_enabled !== false;
+    const next = !previous;
+    toggle.disabled = true;
+    status.textContent = `${widget.name || widget.id} wird ${next ? "aktiviert" : "deaktiviert"}…`;
+    try {
+      const saved = await api.patchWidget(widget.id, { is_enabled: next });
+      widget.is_enabled = saved?.is_enabled !== false;
+      this.renderToggleState(toggle, widget.is_enabled);
+      toggle.disabled = false;
+      this.renderWidgetStatus(status);
+      await this.refreshDataViews();
+    } catch (error) {
+      widget.is_enabled = previous;
+      this.renderToggleState(toggle, previous);
+      toggle.disabled = false;
+      status.textContent = `${widget.name || widget.id}: Schalten fehlgeschlagen – ${error?.message || error}`;
+      this.log?.error?.(`[app] Widget ${widget.id} schalten fehlgeschlagen`, error);
+    }
+  }
+
+  /** Statuszeile „N von M aktiv" aus dem aktuellen Registry-Zustand. */
+  renderWidgetStatus(status) {
+    const widgets = this.widgetRegistry;
+    if (!Array.isArray(widgets) || widgets.length === 0) {
+      status.textContent = "Registry leer – Zustand nicht verfügbar";
+      return;
+    }
+    const active = widgets.filter((widget) => widget.is_enabled !== false).length;
+    status.textContent = `${active} von ${widgets.length} aktiv`;
+  }
+
+  /** Daten-Tabs neu aufbauen, damit `is_enabled` sofort sichtbar wirkt (AC3). */
+  async refreshDataViews() {
+    for (const slug of [...this.views.keys()]) {
+      if (slug === WIDGETS_TAB) {
+        continue;
+      }
+      await this.rebuildView(slug);
+    }
+  }
+
+  async rebuildView(slug) {
+    const section = this.views.get(slug);
+    if (!section) {
+      return;
+    }
+    for (const entry of [...this.runtime.instances.values()]) {
+      if (entry.container && section.contains(entry.container)) {
+        this.runtime.destroy(entry);
+      }
+    }
+    const grid = this.grids.get(slug);
+    if (grid) {
+      grid.destroy();
+      this.grids.delete(slug);
+    }
+    section.replaceChildren();
+    await this.buildBento(section, slug);
   }
 
   showTab(slug, { persist = true } = {}) {

@@ -178,17 +178,21 @@ try {
   );
   await page.screenshot({ path: `${SHOT_DIR}/02-error-placeholder.png` });
 
-  // Tap-Targets >= 44px (I.3)
+  // Tap-Targets >= 44px (I.3). Nur sichtbare Elemente: Griffe auf dem inaktiven
+  // `dashboard`-Tab sind per `hidden` (display:none) versteckt und damit keine
+  // Tap-Ziele; ihre 0x0-Rechtecke sind keine Verletzung der 44-px-Regel.
   const targets = await page.evaluate(() =>
     [
       ...document.querySelectorAll(".tab"),
       ...document.querySelectorAll('.view[data-tab="todos"] .ht-filter'),
       ...document.querySelectorAll('.view[data-tab="todos"] .ht-check'),
       ...document.querySelectorAll(".bento-item__handle"),
-    ].map((node) => {
-      const rect = node.getBoundingClientRect();
-      return { cls: node.className, w: Math.round(rect.width), h: Math.round(rect.height) };
-    }),
+    ]
+      .map((node) => {
+        const rect = node.getBoundingClientRect();
+        return { cls: node.className, w: Math.round(rect.width), h: Math.round(rect.height) };
+      })
+      .filter((target) => target.w > 0 && target.h > 0),
   );
   const tooSmall = targets.filter((target) => target.w < 44 || target.h < 44);
   check(

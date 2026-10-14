@@ -4,6 +4,7 @@
 |---|---|---|
 | `bento.test.mjs` | Unit-Test der Bento-Grid-Engine (E.6) | keine (`node --test`) |
 | `e2e.mjs` | Browser-E2E gegen den laufenden Stack (WP-3 + WP-7) | `playwright-core` + Chromium |
+| `e2e-widget-admin.mjs` | Browser-E2E Widget-Verwaltung (WP-9 / MARAAA-22) | `playwright-core` + Chromium |
 
 ```bash
 cd frontend
@@ -12,7 +13,19 @@ npm test                    # Unit-Tests, kein Server nötig
 
 # E2E: Stack muss laufen (docker compose up -d) und das Frontend ausliefern (D10)
 CHROMIUM_PATH=/pfad/zu/chrome BASE_URL=http://127.0.0.1:8000 npm run test:e2e
+CHROMIUM_PATH=/pfad/zu/chrome BASE_URL=http://127.0.0.1:8000 npm run test:e2e:admin
 ```
+
+`e2e-widget-admin.mjs` prüft die binären Abnahmekriterien von WP-9 und setzt
+eine geseedete Widget-Registry voraus (MARAAA-16; sonst bricht der Lauf mit
+`SKIP` ab):
+
+1. `widgets`-Tab listet alle Zeilen aus `GET /api/widgets` (Name, Version,
+   Kategorie, Zustand)
+2. Umschalten ruft `PATCH /api/widgets/{id}`; Zustand persistiert nach Reload
+3. deaktiviertes Widget verschwindet aus dem `dashboard`-Tab, Reaktivieren
+   stellt es wieder her
+4. Tap-Ziele ≥ 44 px, Umschalten auch per Tap (kein Hover)
 
 `e2e.mjs` prüft die binären Abnahmekriterien und legt Screenshots in
 `tests/screenshots/` ab:
