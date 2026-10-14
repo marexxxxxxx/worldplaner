@@ -1,0 +1,122 @@
+/* Wetter — Widget-Styles, gescoped über die Host-Klasse .wg-weather (E.1).
+   Palette nach I.2; die Divergenz (über/unter Ziel) trägt zusätzlich immer
+   eine Glyphe UND Text, damit die Aussage in Graustufen bestehen bleibt. */
+
+.wg-weather {
+  --wx-cold: #7dd3fc;
+  --wx-warm: #fca5a5;
+  height: 100%;
+  min-height: 0;
+  color: var(--text-primary, #f5f5f5);
+}
+
+.wg-weather .wx {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  height: 100%;
+  min-height: 0;
+}
+
+.wg-weather .wx-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.wg-weather .wx-label {
+  color: var(--text-secondary, #a3a3a3);
+  font-size: 14px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+/* 44 x 44 Tap-Target (I.3), keine Hover-Abhängigkeit. */
+.wg-weather .wx-refresh {
+  display: grid;
+  place-items: center;
+  width: var(--tap-target, 44px);
+  height: var(--tap-target, 44px);
+  flex: 0 0 var(--tap-target, 44px);
+  border-radius: var(--radius-control, 12px);
+  border: 1px solid var(--line-strong, #242424);
+  background: var(--bg, #050505);
+  color: var(--text-secondary, #a3a3a3);
+  font-size: 20px;
+  line-height: 1;
+}
+
+.wg-weather .wx-value {
+  margin: 0;
+  font-size: 44px;
+  font-weight: 600;
+  line-height: 1.05;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-primary, #f5f5f5);
+}
+
+.wg-weather .wx-condition {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  font-size: 18px;
+  font-weight: 500;
+}
+
+.wg-weather .wx-glyph {
+  font-size: 20px;
+}
+
+.wg-weather .wx-context,
+.wg-weather .wx-details {
+  margin: 0;
+  color: var(--text-secondary, #a3a3a3);
+  font-size: 13px;
+}
+
+.wg-weather .wx-details[hidden] {
+  display: none;
+}
+
+.wg-weather .wx-target {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: auto 0 0;
+  padding-top: 6px;
+  border-top: 1px solid var(--line, #1c1c1c);
+  color: var(--text-secondary, #a3a3a3);
+  font-size: 13px;
+}
+
+.wg-weather .wx-target__glyph {
+  font-size: 14px;
+}
+
+/* Divergierend um den neutralen Wohlfühlbereich. */
+.wg-weather .wx[data-comfort="below"] .wx-value,
+.wg-weather .wx[data-comfort="below"] .wx-target__glyph {
+  color: var(--wx-cold);
+}
+
+.wg-weather .wx[data-comfort="above"] .wx-value,
+.wg-weather .wx[data-comfort="above"] .wx-target__glyph {
+  color: var(--wx-warm);
+}
+
+.wg-weather .wx[data-comfort="within"] .wx-target__glyph {
+  color: var(--accent, #3b82f6);
+}
+
+/* Kein Wert: leerer Zustand, klar als solcher lesbar. */
+.wg-weather .wx[data-mode="empty"] .wx-value {
+  color: var(--text-secondary, #a3a3a3);
+}
+
+/* Cache/Ausfall: Wert bleibt sichtbar, aber gedämpft. */
+.wg-weather .wx[data-mode="degraded"] .wx-value,
+.wg-weather .wx[data-mode="degraded"] .wx-condition {
+  opacity: 0.7;
+}

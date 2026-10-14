@@ -17,6 +17,8 @@ import { WidgetRuntime } from "./widget-runtime.js";
  * Tabelle registriert (Abschnitt C der Spezifikation).
  */
 const BUILTIN_WIDGETS = [
+  // Wetter/ggf. Garmin sind Cache-Daten -> Polling (Wetter 10 min, Spec I.4).
+  { id: "weather", tab: "dashboard", pollMs: 600000 },
   { id: "hermes-todos", tab: "todos", pollMs: 0 },
 ];
 

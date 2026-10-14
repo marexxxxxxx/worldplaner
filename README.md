@@ -6,7 +6,8 @@ Hermes-To-Dos) für ein Dell-Tablet. Grundlage ist die build-reife Spezifikation
 
 Dieser Stand umfasst **K1 / WP-2** (Docker Compose, SQLite-Schema, FastAPI-Backend,
 Abschnitte B, C, D, H), **K4** (Betriebsartefakte, Abschnitt J),
-**K2 / WP-3 + WP-7** (Widget-Runtime und Hermes-To-Do-Tab, Abschnitte E, I) und
+**K2 / WP-3 + WP-7** (Widget-Runtime und Hermes-To-Do-Tab, Abschnitte E, I),
+**WP-4** (Wetter-Widget, D.6/E) und
 **K3 / WP-8** (MCP-Server über Streamable HTTP, Abschnitt F).
 
 ## Umfang dieses Stands
@@ -19,12 +20,13 @@ Enthalten:
 - `backend/` — FastAPI-App, SQLite-Schema, REST-API, Tests
 - `frontend/` — App-Shell, Bento-Grid, Widget-Runtime, REST-Client
 - `widgets/hermes-todos/` — Hermes-To-Do-Widget
+- `widgets/weather/` — Wetter-Widget (WP-4)
 - `mcp-server/` — MCP-Server über Streamable HTTP mit den 8 MVP-Tools (F)
 - `deploy/` — systemd-Units und Display-Skripte
 - `docs/setup.md` — Setup-Checkliste
 
-Noch **nicht** enthalten (eigene Work-Packages): Wetter-Widget (WP-4),
-Garmin-Widgets (WP-6), `garmin-sync/` (WP-5), Widget-Verwaltung (WP-9).
+Noch **nicht** enthalten (eigene Work-Packages): Garmin-Widgets (WP-6),
+`garmin-sync/` (WP-5), Widget-Verwaltung (WP-9).
 
 ## Voraussetzungen
 
@@ -90,6 +92,8 @@ Das Backend liefert Frontend und Widgets unter derselben Origin aus (D10):
 - `frontend/js/app.js` — Bootstrap, Tab-Routing, SSE-Client mit Backoff (D.8).
 - `widgets/hermes-todos/` — To-Do-Liste mit Abhaken (`PATCH /api/tasks/{id}`
   inkl. `base_version`) und Live-Aktualisierung per SSE (WP-7).
+- `widgets/weather/` — Wetter-Kachel (`GET /api/weather/current`: Temperatur,
+  Zustand, Stand, Wohlfühlbereich als Ziel), Polling alle 10 min (WP-4).
 
 ### Tests (Frontend)
 

@@ -1,0 +1,30 @@
+{
+  "id": "weather",
+  "name": "Wetter",
+  "version": "1.0.0",
+  "author": "Marex Agent Developer",
+  "description": "Aktuelles Wetter am Standort: Temperatur, Zustand, Luftfeuchte und Wind aus GET /api/weather/current (Open-Meteo, 600 s gecacht).",
+  "category": "weather",
+  "icon": "icon.svg",
+  "permissions": ["weather"],
+  "config_schema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "comfort_min_c": {
+        "type": "number",
+        "default": 18,
+        "description": "Untere Grenze des Wohlfühlbereichs in °C (Ziel-Linie der Kachel)."
+      },
+      "comfort_max_c": {
+        "type": "number",
+        "default": 26,
+        "description": "Obere Grenze des Wohlfühlbereichs in °C (Ziel-Linie der Kachel)."
+      }
+    }
+  },
+  "default_size": { "w": 4, "h": 3 },
+  "min_size": { "w": 3, "h": 3 },
+  "max_instances": 1,
+  "tags": ["weather", "open-meteo", "temperatur"]
+}
