@@ -6,12 +6,20 @@
  *   - nicht-leere Liste -> bisheriger Modus, 7-Tage-Zähler korrekt
  *   - Netzfehler / ungültige Antwort -> bisheriger Fehler-/`stale`-Pfad, kein Crash
  *
+ * WP-P2-7: Das Backend liefert höchstens `limit` Einträge (D.5). Der Zähler
+ * ruft deshalb mit dem Backend-Maximum ab, sodass das Wochenziel auch bei mehr
+ * als `limit` Aktivitäten stimmt (`makeBackend` simuliert genau dieses Kappen).
+ *
  * Lauf: `npm test` im Ordner `frontend/` (`node --test tests/`).
  */
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import GarminWorkoutWidget, { readWorkouts, weeklyCount } from "../../widgets/garmin-workout/frontend/widget.js";
+import GarminWorkoutWidget, {
+  readWorkouts,
+  weeklyCount,
+  weeklySummary,
+} from "../../widgets/garmin-workout/frontend/widget.js";
 
 /** Minimales DOM — nur die Methoden, die `render()`/`renderValue()` anfassen. */
 class FakeElement {
@@ -155,4 +163,85 @@ test("readWorkouts: leerer Cache ist kein Fehler", () => {
     stale: true,
     recovered: false,
   });
+});
+
+/** Aktivitäten „in den letzten 7 Tagen", `count` Stück, neueste zuerst. */
+function recentWorkouts(count) {
+  return Array.from({ length: count }, (_, index) => workout(5 + index));
+}
+
+/**
+ * Backend-Simulation (D.5) wie `garmin_cache.read_workouts`: ohne `date`
+ * höchstens `limit` der neuesten Aktivitäten — der Kern des WP-P2-7-Befunds.
+ */
+function makeBackend(total) {
+  return {
+    calls: [],
+    async fetchJson(url) {
+      this.calls.push(url);
+      const limit = Number(new URL(url, "http://localhost").searchParams.get("limit"));
+      return { workouts: recentWorkouts(Math.min(total, limit)), stale: false };
+    },
+  };
+}
+
+async function bootWithApi(config, api) {
+  const container = new FakeElement("div");
+  const widget = new GarminWorkoutWidget(container, config, api);
+  await widget.render();
+  await widget.refresh();
+  return { widget, container, api };
+}
+
+test("WP-P2-7: > limit Workouts in 7 Tagen zeigt die tatsaechliche Wochenzahl", async () => {
+  // 15 Aktivitäten in 7 Tagen, Anzeige-limit 10 -> Zähler muss 15 zeigen, nicht 10.
+  const { widget, api } = await bootWithApi({ weekly_target: 10, limit: 10 }, makeBackend(15));
+
+  assert.equal(widget.valueEl.textContent, "15");
+  assert.equal(weeklyCount(widget.last.items), 15);
+  assert.equal(widget.root.dataset.band, "above");
+  assert.match(widget.targetTextEl.textContent, /\(15\/10\)/);
+  // Der Zählabruf holt das Backend-Maximum, nicht das Anzeige-limit.
+  assert.match(api.calls[0] ?? "", /limit=50/);
+});
+
+test("WP-P2-7: > limit Workouts — Liste bleibt auf config.limit begrenzt", async () => {
+  const { widget } = await bootWithApi({ weekly_target: 3, limit: 10 }, makeBackend(15));
+
+  assert.equal(widget.valueEl.textContent, "15");
+  assert.equal(widget.listEl.children.length, 10);
+  assert.match(widget.contextEl.textContent, /Letzte 10/);
+});
+
+test("WP-P2-7: <= limit Workouts verhalten sich unveraendert", async () => {
+  const { widget } = await bootWithApi({ weekly_target: 3, limit: 10 }, makeBackend(4));
+
+  assert.equal(widget.valueEl.textContent, "4");
+  assert.equal(widget.listEl.children.length, 4);
+  assert.match(widget.contextEl.textContent, /Letzte 4/);
+});
+
+test("WP-P2-7: ausgeschoepftes Abruf-Limit kennzeichnet die Zahl als Untergrenze", async () => {
+  // 60 Aktivitäten in 7 Tagen, Backend-Maximum 50 -> „≥50" statt einer zu kleinen Zahl.
+  const { widget } = await bootWithApi({ weekly_target: 10, limit: 10 }, makeBackend(60));
+
+  assert.equal(widget.valueEl.textContent, "≥50");
+  assert.match(widget.targetTextEl.textContent, /\(≥50\/10\)/);
+  assert.equal(widget.listEl.children.length, 10);
+});
+
+function normalized(count) {
+  return readWorkouts({ workouts: recentWorkouts(count) }).items;
+}
+
+test("WP-P2-7: weeklySummary — exakt bis zur Abrufgrenze, darueber Untergrenze", () => {
+  assert.deepEqual(weeklySummary(normalized(12)), { count: 12, capped: false });
+  assert.deepEqual(weeklySummary(normalized(50)), { count: 50, capped: true });
+
+  // 50 gelieferte Einträge, aber einer älter als 7 Tage -> Wochenzahl bleibt exakt.
+  const mixed = [
+    ...normalized(49),
+    ...readWorkouts({ workouts: [workout(60 * 24 * 9)] }).items,
+  ];
+  assert.deepEqual(weeklySummary(mixed), { count: 49, capped: false });
 });

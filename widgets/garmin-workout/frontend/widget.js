@@ -6,6 +6,12 @@
  * Liste (Datum, Typ, Dauer, Distanz, Kalorien, Puls) als Kontext sowie ein
  * konfigurierbares Wochenziel (`config.weekly_target`).
  *
+ * WP-P2-7: Der Wochenzähler darf nicht am Anzeige-`limit` hängen. Das Backend
+ * liefert höchstens `limit` Einträge (D.5, hart bei 50 geklemmt), deshalb ruft
+ * der Zähler mit `COUNT_LIMIT` (Backend-Maximum) ab und erst die Liste wird auf
+ * `config.limit` gekürzt. Jenseits des Maximums ist die Zahl eine Untergrenze
+ * (`weeklySummary(...).capped`), keine geratene Zahl.
+ *
  * Netzwerk ausschließlich über das Plugin-API `api` (E.5) — kein direkter
  * `fetch`. Fehlervertrag (E.3): leerer Cache (`workouts:[]`) oder Netzfehler
  * führen NICHT zu einer Exception; das Widget zeigt den leeren Zustand bzw. den
@@ -15,6 +21,12 @@
 export const DEFAULT_WEEKLY_TARGET = 3;
 export const DEFAULT_LIMIT = 10;
 const MAX_LIMIT = 50;
+/**
+ * Abruf-Limit des Wochenzählers (= Backend-Maximum aus D.5). Damit zeigt die
+ * Kachel auch bei mehr als `config.limit` Aktivitäten die tatsächliche
+ * Wochenzahl statt des abgeschnittenen `limit`.
+ */
+export const COUNT_LIMIT = MAX_LIMIT;
 const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
 const SOURCE_LABEL = "Garmin";
 
@@ -170,6 +182,20 @@ export function weeklyCount(items, now = Date.now()) {
   return items.filter((item) => isWithinDays(item, 7, now)).length;
 }
 
+/**
+ * Wochenauswertung der geladenen Einträge.
+ *
+ * `capped` ist wahr, wenn die Liste das Abruf-Limit `COUNT_LIMIT` ausschöpft
+ * UND alle Einträge in die letzten sieben Tage fallen — dann kann das Backend
+ * weitere Aktivitäten abgeschnitten haben und `count` ist eine Untergrenze
+ * statt eines exakten Werts (keine erfundene Zahl).
+ */
+export function weeklySummary(items, now = Date.now()) {
+  const count = weeklyCount(items, now);
+  const capped = items.length >= COUNT_LIMIT && count >= COUNT_LIMIT;
+  return { count, capped };
+}
+
 function formatMoment(iso) {
   if (typeof iso !== "string" || iso === "") {
     return null;
@@ -240,7 +266,7 @@ export default class GarminWorkoutWidget {
     let payload = null;
     let fetchFailed = false;
     try {
-      payload = await this.api.fetchJson(`/api/garmin/workouts?limit=${listLimit(this.config)}`);
+      payload = await this.api.fetchJson(`/api/garmin/workouts?limit=${COUNT_LIMIT}`);
     } catch (error) {
       fetchFailed = true;
       this.lastError = (error && error.code) || "NETWORK";
@@ -295,13 +321,17 @@ export default class GarminWorkoutWidget {
       return;
     }
 
-    const count = weeklyCount(last.items);
-    setText(this.valueEl, NO_DECIMAL.format(count));
+    const summary = weeklySummary(last.items);
+    const count = summary.count;
+    const countText = formatWeeklyCount(summary);
+    setText(this.valueEl, countText);
     setText(
       this.subEl,
       `Workout${count === 1 ? "" : "s"} in den letzten 7 Tagen`,
     );
-    this.renderList(last.items);
+    // Liste auf das konfigurierte Anzeige-`limit` kürzen; der Zähler oben nutzt
+    // weiterhin alle geladenen Einträge (WP-P2-7).
+    this.renderList(last.items.slice(0, listLimit(this.config)));
     setText(this.contextEl, this.contextText(last, mode));
 
     const ratio = count / target;
@@ -310,9 +340,9 @@ export default class GarminWorkoutWidget {
     setText(this.targetGlyphEl, BAND_GLYPHS[band] || "○");
     setText(
       this.targetTextEl,
-      `Ziel ${NO_DECIMAL.format(target)} pro Woche · ${BAND_LABELS[band] || "—"} (${NO_DECIMAL.format(
-        count,
-      )}/${NO_DECIMAL.format(target)})`,
+      `Ziel ${NO_DECIMAL.format(target)} pro Woche · ${BAND_LABELS[band] || "—"} (${countText}/${NO_DECIMAL.format(
+        target,
+      )})`,
     );
   }
 
@@ -390,7 +420,8 @@ export default class GarminWorkoutWidget {
   }
 
   contextText(last, mode) {
-    const parts = [`Letzte ${NO_DECIMAL.format(last.items.length)}`];
+    const shown = Math.min(last.items.length, listLimit(this.config));
+    const parts = [`Letzte ${NO_DECIMAL.format(shown)}`];
     parts.push(SOURCE_LABEL);
     parts.push(mode === "stale" ? "Cache veraltet" : "Cache aktuell");
     return parts.join(" · ");
@@ -408,4 +439,9 @@ function setText(element, text) {
   if (element.textContent !== text) {
     element.textContent = text;
   }
+}
+
+/** „15" bzw. „≥50", wenn das Abruf-Limit die Wochenzahl abschneidet. */
+function formatWeeklyCount({ count, capped }) {
+  return capped ? `≥${NO_DECIMAL.format(COUNT_LIMIT)}` : NO_DECIMAL.format(count);
 }
