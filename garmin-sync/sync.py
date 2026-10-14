@@ -22,6 +22,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Any
+from zoneinfo import ZoneInfo
 
 log = logging.getLogger("garmin-sync")
 
@@ -318,6 +319,24 @@ def parse_start_time(value: Any) -> datetime | None:
     return parsed.astimezone(timezone.utc)
 
 
+def local_start_time(start: datetime, timezone_name: str) -> tuple[str, str]:
+    """UTC-Zeitpunkt -> Garmin-Startzeit als (lokale Wandzeit, Zeitzonen-Schluessel).
+
+    Garmin erwartet bei `create_manual_activity` die Startzeit als **lokale** Zeit
+    plus Zeitzonen-Schluessel. `start` kommt bereits als UTC aus
+    `parse_start_time`; ohne Umrechnung auf die konfigurierte Zone wuerde der
+    UTC-Wert als lokale Zeit interpretiert (doppelter Offset, MARAAA-43). Eine
+    unbekannte Zone faellt auf UTC zurueck (Konvention wie
+    `backend/services/baikal.py`), damit ein Fehlwert den Schreibpfad nicht mit
+    einem unstrukturierten 500 bricht.
+    """
+    try:
+        zone = ZoneInfo(timezone_name)
+    except (KeyError, ValueError):
+        return start.strftime("%Y-%m-%dT%H:%M:%S.000"), "UTC"
+    return start.astimezone(zone).strftime("%Y-%m-%dT%H:%M:%S.000"), timezone_name
+
+
 def validate_workout_payload(payload: Any) -> dict[str, Any]:
     """Prueft das Payload-Schema an der Grenze (Pflichtfelder, Wertebereiche).
 
@@ -504,15 +523,17 @@ class RealGarminClient:
         """Legt eine abgeschlossene Aktivitaet an (WP-P2-5, D14/D16).
 
         Nutzt `create_manual_activity` aus python-garminconnect; die Startzeit
-        wird als lokale Zeit plus Zeitzonen-Schluessel uebergeben.
+        wird als lokale Zeit in der konfigurierten Zone plus Zeitzonen-Schluessel
+        uebergeben (MARAAA-43: keine doppelte Umrechnung).
         """
         start = parse_start_time(payload["start_time"])
+        local_time, zone_name = local_start_time(start, self._config.timezone)
         distance_m = payload.get("distance_m")
         distance_km = 0.0 if distance_m is None else float(distance_m) / 1000.0
         return self._call(
             self._garmin.create_manual_activity,
-            start.strftime("%Y-%m-%dT%H:%M:%S.000"),
-            self._config.timezone,
+            local_time,
+            zone_name,
             payload["activity_type"],
             distance_km,
             payload["duration_s"] / 60.0,

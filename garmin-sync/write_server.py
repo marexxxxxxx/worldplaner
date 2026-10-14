@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import logging
 import os
+import sqlite3
 import threading
 from typing import Any, Callable
 
@@ -92,13 +93,21 @@ class WriteService:
             self._client = None
 
     def add_workout(self, payload: Any) -> dict[str, Any]:
-        """Validieren, anlegen, re-syncen und den Workout-Eintrag liefern."""
+        """Validieren, anlegen, re-syncen und den Workout-Eintrag liefern.
+
+        Ein DB-Fehler beim Oeffnen (oder Schreiben, in `sync_workouts_once`) wird
+        als ``gs.TransientError`` gemeldet, damit der Handler die strukturierte
+        Fehlerform statt eines unstrukturierten 500 liefert (MARAAA-43).
+        """
         normalized = gs.validate_workout_payload(payload)
         try:
             client = self._client_or_login()
             raw = client.add_workout(normalized)
             activity_id = _activity_id(raw)
-            conn = gs.connect_db(self._config.db_path)
+            try:
+                conn = gs.connect_db(self._config.db_path)
+            except (sqlite3.Error, OSError) as exc:
+                raise gs.TransientError(f"Datenbank nicht nutzbar: {exc}") from exc
             try:
                 grouped = gs.sync_workouts_once(conn, client)
             finally:

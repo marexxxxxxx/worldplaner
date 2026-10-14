@@ -12,6 +12,8 @@ from __future__ import annotations
 import json
 import socket
 import time
+from datetime import datetime, timezone
+from zoneinfo import ZoneInfo
 
 import httpx
 import pytest
@@ -85,7 +87,7 @@ class FakeWriterClient:
         return list(self._activities[:limit])
 
 
-def _config(db_path: str) -> gs.Config:
+def _config(db_path: str, timezone_name: str = "UTC") -> gs.Config:
     return gs.Config(
         email="user@example.com",
         password="secret",
@@ -95,7 +97,7 @@ def _config(db_path: str) -> gs.Config:
         backoff_cap_seconds=3600,
         token_dir="/data/token",
         db_path=db_path,
-        timezone="UTC",
+        timezone=timezone_name,
     )
 
 
@@ -118,6 +120,37 @@ def _service(db_path: str, factory) -> ws.WriteService:
 
 def _http_client(db_path: str, factory) -> TestClient:
     return TestClient(ws.create_write_app(_service(db_path, factory)))
+
+
+class RecordingGarmin:
+    """Minimale Fassade des python-garminconnect-Objekts (nur der Schreibaufruf).
+
+    Zeichnet die Argumente von `create_manual_activity` auf, damit der reale
+    `RealGarminClient.add_workout`-Pfad ohne Netzwerk und Garmin-Account pruefbar
+    ist (Systemgrenze gemockt, nicht die eigene Logik).
+    """
+
+    def __init__(self) -> None:
+        self.calls: list[tuple] = []
+
+    def create_manual_activity(self, *args) -> dict:
+        self.calls.append(args)
+        return {"activityId": 424242}
+
+    def get_activities(self, start: int, limit: int) -> list:
+        return []
+
+
+def _real_service(db_path: str, timezone_name: str, backend, monkeypatch) -> ws.WriteService:
+    """WriteService auf dem echten `RealGarminClient` mit injizierter Fassade."""
+    monkeypatch.setattr(gs.RealGarminClient, "login", lambda self: None)
+
+    def factory(config: gs.Config) -> gs.RealGarminClient:
+        client = gs.RealGarminClient(config)
+        client._garmin = backend
+        return client
+
+    return ws.WriteService(_config(db_path, timezone_name), factory)
 
 
 # --- Abnahmefall 1+2: Anlegen ueber die Service-Schicht ----------------------
@@ -271,6 +304,102 @@ def test_write_endpoint_unavailable_is_retryable(db_path):
     error = response.json()["error"]
     assert error["code"] == "GARMIN_UNAVAILABLE"
     assert error["retryable"] is True
+
+
+# --- Nachtrag MARAAA-43: Zeitzone des Schreibpfads ----------------------------
+#
+# Abnahmefall 1: bei `GARMIN_TIMEZONE != "UTC"` muss die an Garmin uebergebene
+# Startzeit der uebergebene UTC-Zeitpunkt sein — als lokale Wandzeit plus
+# Zeitzonen-Schluessel, ohne doppelten Offset.
+
+
+def test_write_uses_configured_timezone_without_double_offset(db_path, monkeypatch):
+    backend = RecordingGarmin()
+    client = TestClient(
+        ws.create_write_app(_real_service(db_path, "Europe/Berlin", backend, monkeypatch))
+    )
+
+    response = client.post(
+        "/write", json={"operation": "add_workout", "payload": dict(PAYLOAD)}
+    )
+
+    assert response.status_code == 200
+    local_time, zone_name = backend.calls[0][0], backend.calls[0][1]
+    assert zone_name == "Europe/Berlin"
+    assert local_time == f"{DAY}T09:15:00.000"  # Europe/Berlin ist im Oktober UTC+2.
+    reconstructed = datetime.fromisoformat(local_time).replace(tzinfo=ZoneInfo(zone_name))
+    assert reconstructed.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ") == (
+        f"{DAY}T07:15:00Z"
+    )
+
+
+def test_local_start_time_falls_back_to_utc_for_unknown_zone():
+    # Ein Fehlwert in GARMIN_TIMEZONE darf den Schreibpfad nicht sprengen:
+    # Fallback auf UTC (localtime+Schluessel konsistent) statt Exception.
+    start = gs.parse_start_time(f"{DAY}T07:15:00Z")
+
+    local_time, zone_name = gs.local_start_time(start, "Mars/Olympus")
+
+    assert zone_name == "UTC"
+    assert local_time == f"{DAY}T07:15:00.000"
+
+
+def test_write_with_default_timezone_keeps_utc_wall_time(db_path, monkeypatch):
+    # Abnahmefall 3: Default `UTC` bleibt unveraendert (Wandzeit == UTC-Zeitpunkt).
+    backend = RecordingGarmin()
+    client = TestClient(
+        ws.create_write_app(_real_service(db_path, "UTC", backend, monkeypatch))
+    )
+
+    response = client.post(
+        "/write", json={"operation": "add_workout", "payload": dict(PAYLOAD)}
+    )
+
+    assert response.status_code == 200
+    assert backend.calls[0][0] == f"{DAY}T07:15:00.000"
+    assert backend.calls[0][1] == "UTC"
+
+
+# --- Nachtrag MARAAA-43: strukturierte DB-Fehlerform -------------------------
+#
+# Abnahmefall 2: ein DB-Oeffnungsfehler in `WriteService.add_workout` liefert die
+# strukturierte Form `{ok:false,error:{code,message,retryable}}`, nicht 500.
+
+
+def test_write_reports_db_open_error_as_structured_error(tmp_path):
+    # `db_path` ist ein Verzeichnis -> sqlite3.OperationalError beim Oeffnen.
+    blocked = tmp_path / "als-verzeichnis"
+    blocked.mkdir()
+    client = _http_client(str(blocked), lambda _: FakeWriterClient())
+
+    response = client.post(
+        "/write", json={"operation": "add_workout", "payload": dict(PAYLOAD)}
+    )
+
+    assert response.status_code == 502
+    body = response.json()
+    assert body["ok"] is False
+    assert set(body["error"]) == {"code", "message", "retryable"}
+    assert body["error"]["code"] == "GARMIN_UNAVAILABLE"
+    assert body["error"]["retryable"] is True
+
+
+def test_write_reports_db_path_blocked_by_file_as_structured_error(tmp_path):
+    # `db_path` liegt unter einer regulaeren Datei -> `connect_db` wirft OSError.
+    blocker = tmp_path / "blocker"
+    blocker.write_text("kein Verzeichnis", encoding="utf-8")
+    client = _http_client(str(blocker / "dashboard.db"), lambda _: FakeWriterClient())
+
+    response = client.post(
+        "/write", json={"operation": "add_workout", "payload": dict(PAYLOAD)}
+    )
+
+    assert response.status_code == 502
+    body = response.json()
+    assert body["ok"] is False
+    assert set(body["error"]) == {"code", "message", "retryable"}
+    assert body["error"]["code"] == "GARMIN_UNAVAILABLE"
+    assert body["error"]["retryable"] is True
 
 
 def test_write_path_is_verifiable_with_mock_client_without_account(db_path):
