@@ -1,0 +1,24 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "worldplaner-garmin-sync"
+version = "0.1.0"
+description = "Kiosk-Dashboard-MVP — Garmin-Sync (einziger Schreiber von garmin_cache)"
+requires-python = ">=3.12"
+dependencies = [
+    "garminconnect>=0.3.17,<0.4",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+]
+
+[tool.setuptools]
+py-modules = ["sync"]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]

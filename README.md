@@ -14,19 +14,20 @@ Abschnitte B, C, D, H), **K4** (Betriebsartefakte, Abschnitt J),
 
 Enthalten:
 
-- `compose.yaml` — die Services `backend` (liefert Frontend + Widgets aus, D10)
-  und `mcp-server` (Streamable HTTP, F)
+- `compose.yaml` — die Services `backend` (liefert Frontend + Widgets aus, D10),
+  `mcp-server` (Streamable HTTP, F) und `garmin-sync` (WP-5)
 - `.env.example` — Env-Template
 - `backend/` — FastAPI-App, SQLite-Schema, REST-API, Tests
 - `frontend/` — App-Shell, Bento-Grid, Widget-Runtime, REST-Client
 - `widgets/hermes-todos/` — Hermes-To-Do-Widget
 - `widgets/weather/` — Wetter-Widget (WP-4)
+- `garmin-sync/` — periodischer Garmin-Abruf in `garmin_cache` (WP-5)
 - `mcp-server/` — MCP-Server über Streamable HTTP mit den 8 MVP-Tools (F)
 - `deploy/` — systemd-Units und Display-Skripte
 - `docs/setup.md` — Setup-Checkliste
 
 Noch **nicht** enthalten (eigene Work-Packages): Garmin-Widgets (WP-6),
-`garmin-sync/` (WP-5), Widget-Verwaltung (WP-9).
+Widget-Verwaltung (WP-9).
 
 ## Voraussetzungen
 
@@ -140,4 +141,29 @@ cd mcp-server && pip install -e ".[dev]" && pytest
 
 # Rohbeleg/Inspector-Ersatz gegen einen laufenden Server:
 MCP_URL=http://127.0.0.1:8001/mcp python tests/inspect_client.py
+```
+
+## Garmin-Sync (WP-5 / B2, Spezifikation G)
+
+`garmin-sync` ruft periodisch die Garmin-Gesundheitsdaten ab, normalisiert sie auf
+das verbindliche Payload-Schema (G.5) und schreibt sie nach `garmin_cache` —
+**einziger Schreiber** dieser Tabelle (A.2/D4); das Backend liest ausschließlich
+(`GET /api/garmin/{sleep,readiness,workouts,vitals}`).
+
+- Intervall, Backoff und Token-Verzeichnis aus der Umgebung (G.2/H.1); die
+  Session wird im Named Volume `garmin-token:/data/token` persistiert (G.3).
+- Fehlerverhalten (G.4): Netz/5xx → exponentieller Backoff `base * 2^attempt`,
+  gedeckelt auf `min(GARMIN_BACKOFF_CAP_SECONDS, GARMIN_SYNC_INTERVAL_SECONDS)`;
+  Auth/401 → genau ein Log-Eintrag, dann bis zum nächsten Intervall (kein Hammering).
+- Ohne Credentials/Token startet der Container und loggt verständlich, ohne Crash.
+- Der einmalige Garmin-Login inkl. MFA ist Auftraggeber-Setup (L.3.3, `docs/setup.md`).
+
+```bash
+# Tests (Payload-Schema G.5, Backoff/Auth, No-Credentials-Pfad)
+cd garmin-sync && pip install -e ".[dev]" && pytest
+
+# Verifikation ohne echten Garmin-Account (schreibt synthetische Cache-Zeilen):
+GARMIN_SYNC_MOCK=1 docker compose up -d garmin-sync
+docker compose exec backend python -c \
+  "import sqlite3;print(sqlite3.connect('/data/dashboard.db').execute('select kind,date,fetched_at from garmin_cache').fetchall())"
 ```

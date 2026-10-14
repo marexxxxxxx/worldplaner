@@ -1,7 +1,6 @@
 # Spezifikation H.1 nennt drei Services (backend, garmin-sync, mcp-server).
-# Vorhanden sind `backend` (K1/WP-2) und `mcp-server` (K3/WP-8). `garmin-sync/`
-# existiert noch nicht (WP-5) und wuerde den Build brechen; der Service wird
-# erst mit WP-5 ergaenzt.
+# `garmin-sync` (WP-5) ist der einzige Schreiber von `garmin_cache` (A.2/D4); das
+# Backend liest diese Tabelle ausschliesslich.
 
 services:
   backend:
@@ -47,5 +46,26 @@ services:
       timeout: 5s
       retries: 3
 
+  garmin-sync:
+    build: ./garmin-sync
+    restart: unless-stopped
+    volumes:
+      - garmin-token:/data/token      # persistente Garmin-Session (G.3)
+      - sqlite-data:/data/db          # dieselbe DB-Datei (H.1)
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      - GARMIN_TOKEN_DIR=/data/token
+      - GARMIN_DB_PATH=/data/db/dashboard.db
+      # Nur Verifikation ohne echten Account: GARMIN_SYNC_MOCK=1 schreibt
+      # synthetische Cache-Zeilen im Schema G.5 (Default 0 = echter Client).
+      - GARMIN_SYNC_MOCK=${GARMIN_SYNC_MOCK:-0}
+    # Erst schreiben, wenn das Backend das Schema angelegt hat (C/A.2).
+    depends_on:
+      backend:
+        condition: service_healthy
+
 volumes:
   sqlite-data:
+  garmin-token:
