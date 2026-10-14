@@ -1,0 +1,6 @@
+# Secrets (Geräte-Setup legt hier GARMIN_PASSWORD etc. ab)
+.env
+
+# Python
+__pycache__/
+*.egg-info/
