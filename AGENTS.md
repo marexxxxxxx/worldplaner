@@ -199,7 +199,7 @@ jeweiligen Defaults; leere Zellen werden pro Installation gefüllt.
 | `GARMIN_SYNC_MOCK` | `0` | `1` = synthetische Cache-Zeilen ohne echten Garmin-Login (nur Verifikation). |
 | `GARMIN_SYNC_WRITE_URL` *(kommentiert)* | `http://garmin-sync:8002` | Forward-Ziel des internen Write-Endpunkts; Default genügt. |
 | `GARMIN_SYNC_WRITE_TIMEOUT_SECONDS` *(kommentiert)* | `10` | Timeout des Forward-Clients. |
-| `GARMIN_TIMEZONE` *(nicht in `.env.example`)* | `UTC` | Lokale Zeitzone beim Anlegen einer Aktivität (`garmin-sync/write_server.py`). |
+| `GARMIN_TIMEZONE` *(nicht in `.env.example`)* | `UTC` | Lokale Zeitzone beim Anlegen einer Aktivität (`garmin-sync/sync.py`). |
 
 ### Wetter (Open-Meteo)
 
@@ -321,7 +321,7 @@ alles andere wird per `http_status:404` abgewiesen. Das Frontend bleibt lokal au
 ## 6. MCP-Anbindung
 
 - **Endpunkt (Streamable HTTP):** `POST /mcp` (Server-Stream: `GET /mcp`).
-- **Healthcheck:** `GET /healthz` → `{"status":"ok"}`.
+- **Healthcheck:** `GET /healthz` → `{"status":"ok","server":"worldplaner-mcp"}`.
 - **Im Container:** `0.0.0.0:8001`; **am Host:** nur `127.0.0.1:8001`. Exposition
   ausschließlich über Tunnel + Cloudflare Access.
 - **Tunnel-Ziel:** `https://<hostname>/mcp` → `http://127.0.0.1:8001/mcp`.
@@ -467,7 +467,7 @@ docker compose logs --tail=50 garmin-sync
 - [ ] `docker compose ps` zeigt `backend`, `mcp-server`, `garmin-sync` als
       laufend/healthy.
 - [ ] `curl -s http://localhost:8000/api/health` → `{"status":"ok","db":"ok"}`.
-- [ ] `curl -s http://localhost:8001/healthz` → `{"status":"ok"}`.
+- [ ] `curl -s http://localhost:8001/healthz` → `{"status":"ok","server":"worldplaner-mcp"}`.
 - [ ] `curl -s http://localhost:8000/api/widgets` listet die 9 eingebauten
       Widgets.
 - [ ] MCP gegen laufenden Server: `MCP_URL=http://127.0.0.1:8001/mcp python
