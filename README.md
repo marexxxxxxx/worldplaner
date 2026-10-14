@@ -42,7 +42,11 @@ curl -s http://localhost:8000/api/health
 
 Die SQLite-Datei liegt im Volume `sqlite-data` unter `/data/dashboard.db`.
 Das Schema wird beim Start idempotent angelegt; die drei Tabs
-(`dashboard`, `todos`, `widgets`) werden beim Erststart geseedet.
+(`dashboard`, `todos`, `widgets`) werden beim Erststart geseedet. Ebenso
+registriert der Start die eingebauten Widgets aus `widgets/*/manifest.json`
+(Upsert per `id`, `is_builtin=1`) und legt aus ihren `default_size`-Angaben ein
+initiales `dashboard_layout` an (Abschnitt C). Der Widget-Ordner lässt sich per
+`WIDGETS_DIR` überschreiben (Default: Repo-/Container-Wurzel/`widgets`).
 
 ## Tests
 

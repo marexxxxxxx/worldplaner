@@ -16,7 +16,17 @@ from app.main import create_app  # noqa: E402
 
 
 @pytest.fixture
-def db_path(tmp_path, monkeypatch):
+def widgets_dir(tmp_path, monkeypatch):
+    """Isolierter, standardmaessig leerer Widget-Ordner (Abschnitt C)."""
+    path = tmp_path / "widgets"
+    path.mkdir()
+    monkeypatch.setenv("WIDGETS_DIR", str(path))
+    get_settings.cache_clear()
+    return path
+
+
+@pytest.fixture
+def db_path(tmp_path, widgets_dir, monkeypatch):
     path = tmp_path / "dashboard.db"
     monkeypatch.setenv("SQLITE_PATH", str(path))
     get_settings.cache_clear()

@@ -12,6 +12,10 @@ class Settings(BaseSettings):
     sqlite_path: str = "/data/dashboard.db"
     backend_port: int = 8000
 
+    # Eingebaute Widgets (Abschnitt C): Ordner mit `widgets/*/manifest.json`.
+    # Leer -> vom Repo-/Container-Wurzelverzeichnis abgeleitet (`/widgets`).
+    widgets_dir: str = ""
+
     # Bento-Grid (Abschnitt E.6 / D.1)
     grid_columns: int = 12
     grid_row_height_px: int = 96
