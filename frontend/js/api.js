@@ -18,8 +18,8 @@ export class ApiError extends Error {
   }
 }
 
-async function request(path, { method = "GET", body, signal } = {}) {
-  const init = { method, headers: { Accept: "application/json" }, signal };
+async function request(path, { method = "GET", body, signal, headers = {} } = {}) {
+  const init = { method, headers: { Accept: "application/json", ...headers }, signal };
   if (body !== undefined) {
     init.headers["Content-Type"] = "application/json";
     init.body = JSON.stringify(body);

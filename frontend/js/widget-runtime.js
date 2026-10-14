@@ -19,12 +19,16 @@ const WIDGET_ID_PATTERN = /^[a-z0-9][a-z0-9-]{0,63}$/;
 const SEMVER_PATTERN = /^\d+\.\d+\.\d+$/;
 const CATEGORIES = new Set(["weather", "health", "productivity", "general"]);
 
-/** Pfadmuster je Permission (E.4). */
+/** Pfadmuster je Permission (E.4); identisch zur Server-Map `permissions.py`. */
 const PERMISSION_RULES = {
   garmin_cache: (path) => path.startsWith("/api/garmin/"),
   weather: (path) => path.startsWith("/api/weather/"),
   tasks: (path) => path.startsWith("/api/tasks"),
   state: (path) => path.startsWith("/api/state/"),
+  api_cache: (path) => path.startsWith("/api/cache/"),
+  baikal: (path) => path.startsWith("/api/baikal/"),
+  grocy: (path) => path.startsWith("/api/grocy/"),
+  mealie: (path) => path.startsWith("/api/mealie/"),
 };
 
 export class WidgetError extends Error {
@@ -306,7 +310,10 @@ export class WidgetRuntime {
             status: 403,
           });
         }
-        return api.request(path, options);
+        return api.request(path, {
+          ...options,
+          headers: { ...(options.headers || {}), "X-Widget-Id": entry.widgetId },
+        });
       },
       subscribe: (event, callback) => {
         if (!this.eventBus) {
@@ -326,7 +333,9 @@ export class WidgetRuntime {
           });
         }
         try {
-          return await api.request(`${this.cacheEndpoint}${encodeURIComponent(key)}`);
+          return await api.request(`${this.cacheEndpoint}${encodeURIComponent(key)}`, {
+            headers: { "X-Widget-Id": entry.widgetId },
+          });
         } catch (error) {
           if (error && error.status === 404) {
             return null;

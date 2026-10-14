@@ -1,9 +1,10 @@
 """To-Dos / Hermes-Tasks (Spezifikation D.4)."""
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Depends, Query
 
 from .. import db
 from ..models import TaskCreate, TaskUpdate
+from ..permissions import require_permission
 from ..services import tasks as tasks_service
 from .events import bus
 
@@ -14,6 +15,7 @@ router = APIRouter(prefix="/tasks", tags=["tasks"])
 async def list_tasks(
     status: str = Query(default="all", pattern="^(open|done|all)$"),
     limit: int = Query(default=50, ge=1, le=200),
+    _perm: None = Depends(require_permission("tasks")),
 ) -> list[dict]:
     with db.get_conn() as conn:
         return tasks_service.list_tasks(conn, status, limit)
@@ -28,7 +30,11 @@ async def create_task(payload: TaskCreate) -> dict:
 
 
 @router.patch("/{task_id}")
-async def update_task(task_id: str, payload: TaskUpdate) -> dict:
+async def update_task(
+    task_id: str,
+    payload: TaskUpdate,
+    _perm: None = Depends(require_permission("tasks")),
+) -> dict:
     with db.get_conn() as conn:
         task = tasks_service.update_task(conn, task_id, payload)
     bus.publish("task.updated", task)

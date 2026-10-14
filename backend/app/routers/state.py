@@ -2,10 +2,11 @@
 
 import json
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 
 from .. import db
 from ..models import StateUpdate, not_found, validation_error
+from ..permissions import require_permission
 from .events import bus
 
 ALLOWED_KEYS = ("active_tab", "brightness", "screen")
@@ -14,7 +15,10 @@ router = APIRouter(prefix="/state", tags=["state"])
 
 
 @router.get("/{key}")
-async def get_state(key: str) -> dict:
+async def get_state(
+    key: str,
+    _perm: None = Depends(require_permission("state")),
+) -> dict:
     if key not in ALLOWED_KEYS:
         raise not_found(f"Unbekannter State-Key {key}")
     with db.get_conn() as conn:
