@@ -212,6 +212,7 @@ export default class GarminWorkoutWidget {
     this.last = null; // { items, stale }
     this.degraded = false;
     this.lastError = null;
+    this.expanded = false; // WP-F1-6: "Mehr anzeigen" -> alle geladenen Einträge
     this.root = null;
   }
 
@@ -244,6 +245,11 @@ export default class GarminWorkoutWidget {
     this.listEl = document.createElement("ul");
     this.listEl.className = "gw-list";
 
+    this.toggleEl = document.createElement("button");
+    this.toggleEl.type = "button";
+    this.toggleEl.className = "gw-toggle";
+    this.toggleEl.addEventListener("click", () => this.toggleExpanded());
+
     this.contextEl = document.createElement("p");
     this.contextEl.className = "gw-context";
 
@@ -256,7 +262,7 @@ export default class GarminWorkoutWidget {
     this.targetEl.className = "gw-target";
     this.targetEl.append(this.targetGlyphEl, this.targetTextEl);
 
-    root.append(head, this.valueEl, this.subEl, this.listEl, this.contextEl, this.targetEl);
+    root.append(head, this.valueEl, this.subEl, this.listEl, this.toggleEl, this.contextEl, this.targetEl);
     this.container.replaceChildren(root);
     this.root = root;
     this.renderValue();
@@ -315,6 +321,7 @@ export default class GarminWorkoutWidget {
       setText(this.valueEl, "—");
       setText(this.subEl, this.degraded ? "Daten nicht erreichbar" : "Keine Workouts");
       this.renderList([]);
+      this.renderToggle(0);
       setText(this.contextEl, this.emptyContext());
       setText(this.targetGlyphEl, "○");
       setText(this.targetTextEl, `Ziel ${NO_DECIMAL.format(target)} pro Woche`);
@@ -330,9 +337,13 @@ export default class GarminWorkoutWidget {
       `Workout${count === 1 ? "" : "s"} in den letzten 7 Tagen`,
     );
     // Liste auf das konfigurierte Anzeige-`limit` kürzen; der Zähler oben nutzt
-    // weiterhin alle geladenen Einträge (WP-P2-7).
-    this.renderList(last.items.slice(0, listLimit(this.config)));
-    setText(this.contextEl, this.contextText(last, mode));
+    // weiterhin alle geladenen Einträge (WP-P2-7). WP-F1-6: ausgeklappt
+    // (`this.expanded`) zeigt die Liste alle geladenen Einträge (bis COUNT_LIMIT).
+    const limit = listLimit(this.config);
+    const shown = this.expanded ? last.items : last.items.slice(0, limit);
+    this.renderList(shown);
+    this.renderToggle(last.items.length);
+    setText(this.contextEl, this.contextText(shown.length, mode));
 
     const ratio = count / target;
     const band = classifyRatio(ratio);
@@ -344,6 +355,23 @@ export default class GarminWorkoutWidget {
         target,
       )})`,
     );
+  }
+
+  /** WP-F1-6: zwischen `config.limit` und allen geladenen Einträgen wechseln. */
+  toggleExpanded() {
+    this.expanded = !this.expanded;
+    this.renderValue();
+  }
+
+  /**
+   * Schaltfläche unter der Liste (WP-F1-6). Ohne geladene Einträge gibt es
+   * nichts auszuklappen — dann ist sie ausgeblendet. Der Zustand steckt in
+   * `aria-expanded`, die Beschriftung wechselt mit ("Mehr"/"Weniger anzeigen").
+   */
+  renderToggle(itemCount) {
+    this.toggleEl.hidden = itemCount === 0;
+    this.toggleEl.setAttribute("aria-expanded", this.expanded ? "true" : "false");
+    setText(this.toggleEl, this.expanded ? "Weniger anzeigen" : "Mehr anzeigen");
   }
 
   /** "data" (frisch) | "stale" (Cache/Ausfall) | "empty" (kein Wert). */
@@ -419,8 +447,7 @@ export default class GarminWorkoutWidget {
     return parts.join(" · ");
   }
 
-  contextText(last, mode) {
-    const shown = Math.min(last.items.length, listLimit(this.config));
+  contextText(shown, mode) {
     const parts = [`Letzte ${NO_DECIMAL.format(shown)}`];
     parts.push(SOURCE_LABEL);
     parts.push(mode === "stale" ? "Cache veraltet" : "Cache aktuell");

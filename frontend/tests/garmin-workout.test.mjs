@@ -14,6 +14,7 @@
  */
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 
 import GarminWorkoutWidget, {
   readWorkouts,
@@ -193,6 +194,13 @@ async function bootWithApi(config, api) {
   return { widget, container, api };
 }
 
+/** Löst die am Element registrierten `click`-Listener aus (Fake-DOM). */
+function click(element) {
+  for (const handler of element.listeners.click || []) {
+    handler({});
+  }
+}
+
 test("WP-P2-7: > limit Workouts in 7 Tagen zeigt die tatsaechliche Wochenzahl", async () => {
   // 15 Aktivitäten in 7 Tagen, Anzeige-limit 10 -> Zähler muss 15 zeigen, nicht 10.
   const { widget, api } = await bootWithApi({ weekly_target: 10, limit: 10 }, makeBackend(15));
@@ -244,4 +252,102 @@ test("WP-P2-7: weeklySummary — exakt bis zur Abrufgrenze, darueber Untergrenze
     ...readWorkouts({ workouts: [workout(60 * 24 * 9)] }).items,
   ];
   assert.deepEqual(weeklySummary(mixed), { count: 49, capped: false });
+});
+
+// --- WP-F1-6: Trainingsplan ausklappen --------------------------------------
+
+const GW_CSS = readFileSync(
+  new URL("../../widgets/garmin-workout/frontend/style.css", import.meta.url),
+  "utf8",
+);
+
+test("WP-F1-6 AC1/AC2: 'Mehr anzeigen' klappt auf alle geladenen Eintraege aus", async () => {
+  const { widget, api } = await bootWithApi({ weekly_target: 3, limit: 10 }, makeBackend(15));
+
+  // Normalzustand: Liste auf config.limit (10) gekuerzt, Schaltflaeche da.
+  assert.equal(widget.listEl.children.length, 10);
+  assert.equal(widget.toggleEl.hidden, false);
+  assert.equal(widget.toggleEl.textContent, "Mehr anzeigen");
+  assert.equal(widget.toggleEl.getAttribute("aria-expanded"), "false");
+
+  // Aufgeklappt: alle geladenen Eintraege (15), Beschriftung/Zustand wechseln.
+  click(widget.toggleEl);
+  assert.equal(widget.expanded, true);
+  assert.equal(widget.listEl.children.length, 15);
+  assert.equal(widget.toggleEl.textContent, "Weniger anzeigen");
+  assert.equal(widget.toggleEl.getAttribute("aria-expanded"), "true");
+
+  // Zugeklappt: zurueck auf config.limit.
+  click(widget.toggleEl);
+  assert.equal(widget.expanded, false);
+  assert.equal(widget.listEl.children.length, 10);
+  assert.equal(widget.toggleEl.textContent, "Mehr anzeigen");
+  assert.equal(widget.toggleEl.getAttribute("aria-expanded"), "false");
+
+  // AC3: kein zusaetzlicher Endpunkt — nur der eine refresh()-Abruf.
+  assert.equal(api.calls.length, 1);
+  assert.match(api.calls[0], /limit=50/);
+});
+
+test("WP-F1-6 AC2: ausgeklappt bis COUNT_LIMIT (50), nicht darueber", async () => {
+  const { widget } = await bootWithApi({ weekly_target: 10, limit: 10 }, makeBackend(60));
+
+  assert.equal(widget.listEl.children.length, 10);
+  assert.match(widget.contextEl.textContent, /Letzte 10/);
+
+  click(widget.toggleEl);
+  assert.equal(widget.listEl.children.length, 50);
+  assert.match(widget.contextEl.textContent, /Letzte 50/);
+});
+
+test("WP-F1-6: Schaltflaeche steht unter der Liste und bei kurzer Liste harmlos", async () => {
+  const { widget } = await bootWithApi({ limit: 10 }, makeBackend(4));
+
+  const order = widget.root.children.map((child) => child.className);
+  assert.ok(order.indexOf("gw-list") < order.indexOf("gw-toggle"), "Toggle liegt unter der Liste");
+
+  assert.equal(widget.listEl.children.length, 4);
+  assert.equal(widget.toggleEl.hidden, false);
+  click(widget.toggleEl);
+  // Nichts verborgen -> dieselbe Anzahl, aber Zustand wechselt sichtbar.
+  assert.equal(widget.listEl.children.length, 4);
+  assert.equal(widget.toggleEl.textContent, "Weniger anzeigen");
+  assert.equal(widget.toggleEl.getAttribute("aria-expanded"), "true");
+});
+
+test("WP-F1-6: ohne geladene Eintraege keine Ausklapp-Schaltflaeche", async () => {
+  const empty = await boot({}, { workouts: [], stale: true });
+  assert.equal(empty.widget.toggleEl.hidden, true);
+
+  const failed = await boot({}, Object.assign(new Error("boom"), { code: "NETWORK" }));
+  assert.equal(failed.widget.toggleEl.hidden, true);
+});
+
+test("WP-F1-6 AC1: .gw-toggle ist ein Tap-Ziel >= 44 px", () => {
+  const rule = GW_CSS.match(/\.gw-toggle\s*\{([^}]*)\}/);
+  assert.ok(rule, "Regel .gw-toggle fehlt in style.css");
+  const height = rule[1].match(/min-height:\s*([^;]+);/);
+  assert.ok(height, "min-height fehlt in .gw-toggle");
+  assert.match(height[1], /44px/);
+});
+
+test("WP-F1-6: refresh() behaelt den Ausklapp-Zustand und aktualisiert die Liste", async () => {
+  let total = 15;
+  const api = {
+    calls: [],
+    async fetchJson(url) {
+      this.calls.push(url);
+      const limit = Number(new URL(url, "http://localhost").searchParams.get("limit"));
+      return { workouts: recentWorkouts(Math.min(total, limit)), stale: false };
+    },
+  };
+  const { widget } = await bootWithApi({ limit: 10 }, api);
+  click(widget.toggleEl);
+  assert.equal(widget.listEl.children.length, 15);
+
+  total = 20;
+  await widget.refresh();
+  assert.equal(widget.expanded, true);
+  assert.equal(widget.listEl.children.length, 20);
+  assert.equal(widget.toggleEl.textContent, "Weniger anzeigen");
 });

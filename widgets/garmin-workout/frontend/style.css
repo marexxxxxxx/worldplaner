@@ -115,6 +115,25 @@
   font-size: 13px;
 }
 
+/* Ausklappen der Liste (WP-F1-6): voll breites Tap-Ziel >= 44 px, Zustand über
+   aria-expanded und wechselnde Beschriftung. `[hidden]` gewinnt gegen display. */
+.wg-garmin-workout .gw-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: var(--tap-target, 44px);
+  margin-top: 2px;
+  border-radius: var(--radius-control, 12px);
+  border: 1px solid var(--line-strong, #242424);
+  background: var(--bg, #050505);
+  color: var(--text-secondary, #a3a3a3);
+  font-size: 14px;
+}
+
+.wg-garmin-workout .gw-toggle[hidden] {
+  display: none;
+}
+
 .wg-garmin-workout .gw-context {
   margin: 0;
   color: var(--text-secondary, #a3a3a3);
