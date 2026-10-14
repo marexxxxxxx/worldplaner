@@ -1,0 +1,17 @@
+[Unit]
+Description=Chromium Kiosk
+Documentation=file:///opt/worldplaner/docs/setup.md
+After=kiosk-x11.service network.target
+Wants=kiosk-x11.service
+
+[Service]
+User=kiosk
+Environment=DISPLAY=:0
+ExecStart=/usr/bin/chromium --kiosk --noerrdialogs --disable-infobars \
+  --touch-events=enabled --disable-pinch http://localhost:8000
+# Watchdog gegen Speicherlecks: kill -9 auf Chromium wird in <= 5 s neu gestartet (WP-1).
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=graphical.target

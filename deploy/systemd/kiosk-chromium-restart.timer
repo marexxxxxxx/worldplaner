@@ -1,0 +1,12 @@
+[Unit]
+Description=Daily Chromium restart
+Documentation=file:///opt/worldplaner/docs/setup.md
+
+[Timer]
+# Taeglicher Neustart um 04:00 gegen Chromium-Speicherlecks.
+OnCalendar=*-*-* 04:00:00
+# Persistent=true: wird der Rechner um 04:00 nicht erreicht, holt systemd den Lauf nach.
+Persistent=true
+
+[Install]
+WantedBy=timers.target

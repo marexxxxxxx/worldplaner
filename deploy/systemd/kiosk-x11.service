@@ -1,0 +1,22 @@
+[Unit]
+Description=Kiosk X11 Server (Xorg on :0)
+Documentation=file:///opt/worldplaner/docs/setup.md
+# Der Kiosk braucht genau einen X-Server; ein Desktop-Manager wuerde :0 belegen.
+Conflicts=display-manager.service
+After=systemd-user-sessions.service
+Before=kiosk-chromium.service
+
+[Service]
+Type=simple
+# Xorg startet auf VT7; "einmalig" als ein einziger, dauerhafter X-Server fuer den Kiosk.
+# Bei Absturz wird er neu gestartet, damit der Chromium-Kiosk (WP-1) nicht schwarz bleibt.
+ExecStart=/usr/bin/Xorg :0 -nolisten tcp vt7
+Restart=always
+RestartSec=2
+StandardInput=tty
+TTYPath=/dev/tty7
+TTYReset=yes
+TTYVHangup=yes
+
+[Install]
+WantedBy=graphical.target

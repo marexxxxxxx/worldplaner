@@ -1,0 +1,8 @@
+[Unit]
+Description=Restart Chromium Kiosk
+Documentation=file:///opt/worldplaner/docs/setup.md
+After=kiosk-chromium.service
+
+[Service]
+Type=oneshot
+ExecStart=/bin/systemctl restart kiosk-chromium.service

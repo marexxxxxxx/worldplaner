@@ -1,0 +1,38 @@
+# worldplaner — cloudflared-Referenzkonfiguration (BEISPIEL, vom Auftraggeber verwaltet).
+#
+# cloudflared laeuft NICHT in docker compose (Spez. H.1). Diese Datei ist nur eine
+# Referenz/Arbeitsgrundlage fuer den Host-Tunnel. Der Tunnel exponiert ausschliesslich
+# den MCP-Server (127.0.0.1:8001); das Frontend bleibt lokal auf :8000 (Kiosk).
+# Der eigentliche Zugriffsschutz (Service Token, JWKS/Assertion) wird durch
+# Cloudflare Access am Edge gesetzt — siehe docs/setup.md, Schritt 3.
+#
+# Einrichten (Beispiel):
+#   sudo mkdir -p /etc/cloudflared
+#   sudo cloudflared tunnel login
+#   sudo cloudflared tunnel create worldplaner-mcp
+#   sudo cp config.yml.example /etc/cloudflared/config.yml
+#   #   -> <TUNNEL-UUID> durch die von "tunnel create" ausgegebene ID ersetzen
+#   sudo cloudflared tunnel route dns worldplaner-mcp mcp.example.com
+#   sudo cloudflared service install
+#
+# Pruefen:
+#   cloudflared tunnel ingress validate
+#   cloudflared tunnel ingress rule https://mcp.example.com/mcp
+
+# Von "cloudflared tunnel create" vergebene UUID (Platzhalter ersetzen).
+tunnel: 00000000-0000-0000-0000-000000000000
+credentials-file: /etc/cloudflared/00000000-0000-0000-0000-000000000000.json
+
+# Kein direkter Zugriff auf das Frontend/Backend ueber den Tunnel.
+ingress:
+  # MCP-Server (Streamable HTTP), Spez. F.1. Hostname MUSS hinter Cloudflare Access liegen.
+  - hostname: mcp.example.com
+    service: http://127.0.0.1:8001
+    originRequest:
+      # MCP streamt (SSE/Streamable HTTP) — kein Response-Buffering/Timeout.
+      noTLSVerify: false
+      connectTimeout: 30s
+      disableChunkedEncoding: false
+
+  # Pflichtregel: alles andere abweisen.
+  - service: http_status:404
