@@ -5,6 +5,11 @@ Spezifikation (`spec`, Rev 2). „Abschnitt 7 des Plans" entspricht dort
 **Abschnitt L.3 (Restfragen / Setup-Abhängigkeiten)**; die Nummerierung unten
 folgt den Punkten 1–7 aus L.3.
 
+Die Abschnitte 0–9 decken **Phase 1** (Kiosk-Betrieb des MVP) ab. **Phase 2**
+ist in den Abschnitten 10–14 nachgezogen: Zugangsdaten für Baikal, Grocy und
+Mealie, die Zip-/Git-Widget-Installation und das Garmin-Schreibtool
+(`garmin_add_workout`).
+
 - **Alle** Schritte laufen **auf dem Dell-Tablet** (nicht in der Agentur-Umgebung).
 - Die Artefakte in `deploy/` sind vorbereitet und geprüft; die **Installation und
   Verifikation am Gerät** erledigt der Auftraggeber.
@@ -348,6 +353,183 @@ folgt den Punkten 1–7 aus L.3.
 
 ---
 
+## Phase 2 — Zugangsdaten, Widget-Installation und Garmin-Schreibpfad
+
+Die folgenden Schritte gehören zu **Phase 2** (`spec-phase2`) und erweitern die
+Checkliste oben. Sie laufen ebenfalls auf dem Tablet im Repo unter
+`/opt/worldplaner`. Alle Werte kommen in `/opt/worldplaner/.env`; nach jeder
+Änderung das Backend neu starten:
+
+```bash
+docker compose -f /opt/worldplaner/compose.yaml up -d backend
+```
+
+Die Adapter fragen ihre Quelle ab und puffern das Ergebnis; bei Fehlern
+(unerreichbar, 401, fehlende Zugangsdaten) wird der letzte Cache-Wert geliefert,
+sonst `200` mit `error_code` — nie ein 5xx-Absturz.
+
+---
+
+## 10. Baikal-Kalender anbinden *(WP-P2-1)*
+
+CalDAV-Pull-Adapter (HTTP Basic), Widget `baikal-calendar`, Endpunkt
+`GET /api/baikal/events`.
+
+- [ ] `BAIKAL_URL` auf die **CalDAV-Sammlung** des gewünschten Kalenders setzen
+      (die URL wird direkt als `REPORT`-Ziel verwendet), dazu Benutzer/Passwort:
+
+  ```bash
+  # .env
+  BAIKAL_URL=https://baikal.example.com/remote.php/dav/calendars/<benutzer>/<kalender>/
+  BAIKAL_USERNAME=<benutzer>
+  BAIKAL_PASSWORD=<passwort>
+  BAIKAL_CACHE_TTL_SECONDS=600
+  BAIKAL_DAYS_AHEAD=7
+  BAIKAL_TIMEOUT_SECONDS=10
+  ```
+
+- [ ] Backend neu starten (siehe oben) und das Ergebnis prüfen:
+
+  ```bash
+  curl -s http://localhost:8000/api/baikal/events
+  # erwartet: {"events":[...]} ; bei Fehler {"events":[],"error_code":"BAIKAL_UNAVAILABLE"}
+  ```
+
+> `BAIKAL_DAYS_AHEAD` begrenzt das Vorausschau-Fenster; ein leeres Ergebnis ist
+> kein Fehler.
+
+---
+
+## 11. Grocy-Bestand anbinden *(WP-P2-2)*
+
+REST-Pull-Adapter (Header `GROCY-API-KEY`), Widget `grocy-stock`, Endpunkt
+`GET /api/grocy/stock`. Voraussetzung: Grocy ≥ 3.3.
+
+- [ ] `GROCY_URL` (Basis-URL, ohne `/api/stock` — der Pfad wird ergänzt) und den
+      API-Key aus Grocy (Einstellungen → API) eintragen:
+
+  ```bash
+  # .env
+  GROCY_URL=https://grocy.example.com
+  GROCY_API_KEY=<api-key>
+  GROCY_CACHE_TTL_SECONDS=600
+  GROCY_TIMEOUT_SECONDS=10
+  ```
+
+- [ ] Backend neu starten und prüfen:
+
+  ```bash
+  curl -s http://localhost:8000/api/grocy/stock
+  # erwartet: {"products":[...]} ; bei Fehler {"products":[],"error_code":"GROCY_UNAVAILABLE"}
+  ```
+
+---
+
+## 12. Mealie-Wochenplan anbinden *(WP-P2-3)*
+
+REST-Pull-Adapter (Bearer-Token), Widget `mealie-mealplan`, Endpunkt
+`GET /api/mealie/mealplan`. Voraussetzung: Mealie v2 (der Adapter ruft
+`GET {MEALIE_URL}/api/groups/mealplans/this-week`).
+
+- [ ] `MEALIE_URL` (Basis-URL, ohne den API-Pfad) und den API-Token eintragen
+      (Mealie: Profil → API-Token):
+
+  ```bash
+  # .env
+  MEALIE_URL=https://mealie.example.com
+  MEALIE_API_TOKEN=<bearer-token>
+  MEALIE_CACHE_TTL_SECONDS=600
+  MEALIE_DAYS_AHEAD=7
+  MEALIE_TIMEOUT_SECONDS=10
+  ```
+
+- [ ] Backend neu starten und prüfen:
+
+  ```bash
+  curl -s http://localhost:8000/api/mealie/mealplan
+  # erwartet: {"meals":[...]} ; bei Fehler {"meals":[],"error_code":"MEALIE_UNAVAILABLE"}
+  ```
+
+> `MEALIE_DAYS_AHEAD` liegt im Bereich 1–7 (Mealie liefert „this week").
+
+---
+
+## 13. Zip-/Git-Widget-Installation *(WP-P2-4)*
+
+Installierte Widgets landen im Schreib-Volume `widgets-data`
+(`WIDGETS_INSTALL_DIR=/data/widgets`, im Container `/data/widgets`); die
+eingebauten bleiben read-only. Nach der Installation wird das Widget mit
+`is_builtin=0` registriert und lässt sich im `widgets`-Tab aktivieren.
+
+- [ ] Zip installieren (`multipart`-Feld **`file`**; Antwort `201 {widget:{…}}`):
+
+  ```bash
+  curl -s -X POST http://localhost:8000/api/widgets/install \
+       -F 'file=@mein-widget.zip'
+  ```
+
+- [ ] Aus Git installieren (`ref` Default `main`; Antwort `201 {widget:{…}}`):
+
+  ```bash
+  curl -s -X POST http://localhost:8000/api/widgets/install/git \
+       -H 'Content-Type: application/json' \
+       -d '{"url":"https://github.com/example/widget","ref":"main"}'
+  ```
+
+- [ ] Ergebnis kontrollieren und ggf. deinstallieren (nicht eingebaute Widgets;
+      Antwort `204`):
+
+  ```bash
+  curl -s http://localhost:8000/api/widgets
+  curl -s -X DELETE http://localhost:8000/api/widgets/<id>
+  ```
+
+**Manifest-Vertrag** (Zip/Clone müssen genau einen Widget-Ordner mit
+`manifest.json` enthalten — direkt oder in einem Unterordner, dessen Name der
+`id` entspricht):
+
+| Feld | Regel |
+|---|---|
+| `id` | `^[a-z0-9][a-z0-9-]{0,63}$` |
+| `name` | 1–80 Zeichen |
+| `version` | SemVer `x.y.z` |
+| `category` | `weather`, `health`, `productivity` oder `general` |
+| `default_size` | `{w: 1–12, h: ≥ 1}` |
+| `permissions` *(optional)* | Teilmenge von `garmin_cache, weather, tasks, state, api_cache, baikal, grocy, mealie` |
+
+Grenzen: `WIDGETS_MAX_ZIP_BYTES` (Zip, Default 10 MiB) und
+`WIDGETS_MAX_UNCOMPRESSED_BYTES` (entpackt, Default 50 MiB). Eine bereits
+registrierte `id` → `409`, ein eingebautes Widget → `403`, unbekannte `id` →
+`404`.
+
+---
+
+## 14. Garmin-Schreibtool `garmin_add_workout` *(WP-P2-5)*
+
+Der MCP-Aufruf `garmin_add_workout` legt eine **abgeschlossene Aktivität** im
+Garmin-Account an (Pflicht: `activity_type`, `start_time` in ISO-8601 UTC,
+`duration_s` ≥ 1; optional `distance_m`, `calories`, `title`). Der Aufruf läuft
+über die Backend-REST-API `POST /api/garmin/workouts`; das Backend reicht ihn an
+den internen Write-Endpunkt `POST /write` von `garmin-sync` (Port `8002`, **kein**
+Host-Port) weiter. `garmin-sync` bleibt einziger Inhaber der Garmin-Session und
+einziger Schreiber von `garmin_cache`.
+
+- [ ] Ohne echten Garmin-Account verifizieren (schreibt synthetische Cache-Zeilen
+      im Schema G.5):
+
+  ```bash
+  GARMIN_SYNC_MOCK=1 docker compose -f /opt/worldplaner/compose.yaml up -d garmin-sync
+  docker compose -f /opt/worldplaner/compose.yaml logs --tail=50 garmin-sync
+  ```
+
+- [ ] Mit echtem Account: einen MCP-Client gegen `http://127.0.0.1:8001/mcp`
+      verbinden (siehe `docs/setup.md` bzw. `AGENTS.md`, Abschnitt 6) und das
+      Tool `garmin_add_workout` aufrufen. Antwort: `{ok:true, workout:{...}}` mit
+      `activity_id`; Fehler `GARMIN_UNAVAILABLE` (retryable) oder
+      `GARMIN_AUTH_FAILED` (nicht retryable).
+
+---
+
 ## Abschluss-Verifikation (Abnahme-Belege)
 
 - [ ] **Units** syntaktisch valide (keine Ausgabe/Exit 0 für die 5 Units):
@@ -367,6 +549,23 @@ folgt den Punkten 1–7 aus L.3.
 - [ ] **Ende-zu-Ende:** Reboot → Chromium-Kiosk zeigt das Frontend; `curl
       http://localhost:8000/api/health` liefert `{"status":"ok","db":"ok"}`.
 
+**Phase 2:**
+
+- [ ] **Adapter** liefern Daten (kein 5xx; ggf. `error_code` statt Absturz):
+
+  ```bash
+  curl -s http://localhost:8000/api/baikal/events
+  curl -s http://localhost:8000/api/grocy/stock
+  curl -s http://localhost:8000/api/mealie/mealplan
+  ```
+
+- [ ] **Widget-Installation:** Zip- und Git-Installation liefern `201`; ein
+      installiertes Widget erscheint in `GET /api/widgets` (`is_builtin=0`) und
+      lässt sich per `DELETE /api/widgets/<id>` wieder entfernen (`204`).
+
+- [ ] **Garmin-Schreibpfad:** mit `GARMIN_SYNC_MOCK=1` läuft `garmin-sync`, und
+      das MCP-Tool `garmin_add_workout` antwortet `{ok:true, workout:{...}}`.
+
 ---
 
 ## Offene Gerätewerte (in die Issue-Notiz eintragen)
@@ -379,3 +578,8 @@ folgt den Punkten 1–7 aus L.3.
 | `CF_ACCESS_TEAM_DOMAIN` | L.3.2 | |
 | `CF_ACCESS_AUD` | L.3.2 | |
 | Layout bestätigt | L.3.5 | |
+| `BAIKAL_URL` | Phase 2 (WP-P2-1) | |
+| `GROCY_URL` | Phase 2 (WP-P2-2) | |
+| `MEALIE_URL` | Phase 2 (WP-P2-3) | |
+| Widget-Installation geprüft (Zip/Git/Delete) | Phase 2 (WP-P2-4) | |
+| `garmin_add_workout` geprüft | Phase 2 (WP-P2-5) | |
