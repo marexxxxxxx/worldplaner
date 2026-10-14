@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24" role="img" aria-label="Wochenplan">
+  <rect x="3" y="5" width="18" height="16" rx="2.5" fill="#141414" stroke="#a3a3a3" stroke-width="1.4"/>
+  <path d="M3 9.5h18" stroke="#a3a3a3" stroke-width="1.4"/>
+  <path d="M7 3.2v3.2M17 3.2v3.2" fill="none" stroke="#3b82f6" stroke-width="1.5" stroke-linecap="round"/>
+  <path d="M8.6 12.4v5.4M7.9 12.4v2.1a0.7 0.7 0 0 0 1.4 0v-2.1M9.3 12.4v2.1"
+        fill="none" stroke="#a3a3a3" stroke-width="1.1" stroke-linecap="round"/>
+  <path d="M15.4 12.4v5.4M15.4 12.4c-0.9 0.2-1.3 1-1.3 2.4"
+        fill="none" stroke="#a3a3a3" stroke-width="1.1" stroke-linecap="round"/>
+</svg>

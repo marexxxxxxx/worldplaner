@@ -1,0 +1,40 @@
+{
+  "id": "mealie-mealplan",
+  "name": "Wochenplan",
+  "version": "1.0.0",
+  "author": "Marex Agent Developer",
+  "description": "Essens-/Wochenplan aus Mealie: Anzahl geplanter Mahlzeiten im Zeitraum, je Tag mit Mahlzeitentyp, Rezept und Portionen aus GET /api/mealie/mealplan (600 s gecacht).",
+  "category": "general",
+  "icon": "icon.svg",
+  "permissions": ["mealie"],
+  "config_schema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "days": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 7,
+        "default": 7,
+        "description": "Zeitraum in Tagen ab heute (1-7) für Wert und Liste."
+      },
+      "min_meals": {
+        "type": "integer",
+        "minimum": 1,
+        "default": 7,
+        "description": "Ziel-Linie: mindestens so viele geplante Mahlzeiten im Zeitraum (Standard 7 für days=7)."
+      },
+      "limit": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 50,
+        "default": 12,
+        "description": "Maximal in der Liste angezeigte Mahlzeiten."
+      }
+    }
+  },
+  "default_size": { "w": 4, "h": 5 },
+  "min_size": { "w": 3, "h": 3 },
+  "max_instances": 1,
+  "tags": ["mealie", "essen", "wochenplan", "rezepte"]
+}

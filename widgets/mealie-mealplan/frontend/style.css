@@ -1,0 +1,190 @@
+/* Mealie-Wochenplan — Widget-Styles, gescoped über .wg-mealie-mealplan (E.1).
+   Mahlzeiten als Liste je Tag (Typ-Glyphe + Text), Ziel-Bewertung als Glyphe UND
+   Text (I.2, graustufenfest). Die Liste scrollt im Widget, damit der Rahmen
+   nicht springt (I.4). */
+
+.wg-mealie-mealplan {
+  --mp-gap: #fca5a5;
+  height: 100%;
+  min-height: 0;
+  color: var(--text-primary, #f5f5f5);
+}
+
+.wg-mealie-mealplan .mp {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  height: 100%;
+  min-height: 0;
+}
+
+.wg-mealie-mealplan .mp-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.wg-mealie-mealplan .mp-label {
+  color: var(--text-secondary, #a3a3a3);
+  font-size: 14px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+/* 44 x 44 Tap-Target (I.3), keine Hover-Abhängigkeit. */
+.wg-mealie-mealplan .mp-refresh {
+  display: grid;
+  place-items: center;
+  width: var(--tap-target, 44px);
+  height: var(--tap-target, 44px);
+  flex: 0 0 var(--tap-target, 44px);
+  border-radius: var(--radius-control, 12px);
+  border: 1px solid var(--line-strong, #242424);
+  background: var(--bg, #050505);
+  color: var(--text-secondary, #a3a3a3);
+  font-size: 20px;
+  line-height: 1;
+}
+
+.wg-mealie-mealplan .mp-value {
+  margin: 0;
+  font-size: 40px;
+  font-weight: 600;
+  line-height: 1.05;
+  font-variant-numeric: tabular-nums;
+}
+
+.wg-mealie-mealplan .mp-sub {
+  margin: 0;
+  font-size: 14px;
+  color: var(--text-secondary, #a3a3a3);
+}
+
+.wg-mealie-mealplan .mp-list {
+  list-style: none;
+  margin: 6px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  overflow-y: auto;
+  min-height: 0;
+  flex: 1 1 auto;
+}
+
+.wg-mealie-mealplan .mp-day {
+  list-style: none;
+}
+
+.wg-mealie-mealplan .mp-day__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 0 0 2px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary, #f5f5f5);
+}
+
+.wg-mealie-mealplan .mp-day__date {
+  text-transform: capitalize;
+}
+
+.wg-mealie-mealplan .mp-day__count {
+  color: var(--text-secondary, #a3a3a3);
+  font-variant-numeric: tabular-nums;
+}
+
+.wg-mealie-mealplan .mp-day__meals {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.wg-mealie-mealplan .mp-meal {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 3px 0;
+  border-bottom: 1px solid var(--line, #1c1c1c);
+}
+
+.wg-mealie-mealplan .mp-meal:last-child {
+  border-bottom: none;
+}
+
+.wg-mealie-mealplan .mp-meal__glyph {
+  font-size: 16px;
+  line-height: 1.3;
+}
+
+.wg-mealie-mealplan .mp-meal__main {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.wg-mealie-mealplan .mp-meal__title {
+  font-size: 14.5px;
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.wg-mealie-mealplan .mp-meal__meta {
+  font-size: 12.5px;
+  color: var(--text-secondary, #a3a3a3);
+}
+
+.wg-mealie-mealplan .mp-empty {
+  list-style: none;
+  color: var(--text-secondary, #a3a3a3);
+  font-size: 13px;
+}
+
+.wg-mealie-mealplan .mp-context {
+  margin: 0;
+  color: var(--text-secondary, #a3a3a3);
+  font-size: 12.5px;
+}
+
+.wg-mealie-mealplan .mp-target {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: auto 0 0;
+  padding-top: 6px;
+  border-top: 1px solid var(--line, #1c1c1c);
+  color: var(--text-secondary, #a3a3a3);
+  font-size: 13px;
+}
+
+.wg-mealie-mealplan .mp-target__glyph {
+  font-size: 14px;
+}
+
+/* Unter Ziel: Lücke in der Planung, divergierend zum neutralen Ziel. */
+.wg-mealie-mealplan .mp[data-band="below"] .mp-value,
+.wg-mealie-mealplan .mp[data-band="below"] .mp-target__glyph {
+  color: var(--mp-gap);
+}
+
+.wg-mealie-mealplan .mp[data-band="within"] .mp-target__glyph {
+  color: var(--accent, #3b82f6);
+}
+
+.wg-mealie-mealplan .mp[data-mode="empty"] .mp-value,
+.wg-mealie-mealplan .mp[data-mode="empty"] .mp-sub {
+  color: var(--text-secondary, #a3a3a3);
+}
+
+/* Cache/Ausfall: Wert bleibt sichtbar, aber gedämpft. */
+.wg-mealie-mealplan .mp[data-mode="stale"] .mp-value,
+.wg-mealie-mealplan .mp[data-mode="stale"] .mp-list {
+  opacity: 0.7;
+}
