@@ -21,6 +21,9 @@
   --radius-card: 16px;
   --radius-control: 12px;
   --tap-target: 44px;
+
+  /* Fokusmodus (spec-focus F): Dimmung der nicht fokussierten Kacheln. */
+  --focus-dim-opacity: 0.2;
 }
 
 *,
@@ -159,6 +162,7 @@ button {
   flex-direction: column;
   min-width: 0;
   min-height: 0;
+  position: relative;
   background: var(--cell-a);
   border: 1px solid var(--line);
   border-radius: var(--radius-card);
@@ -214,6 +218,51 @@ button {
 .bento-item.is-dragging {
   outline: 2px solid var(--accent);
   opacity: 0.92;
+}
+
+/* --- Fokusmodus (spec-focus F) ------------------------------------------- */
+
+/* Genau eine Kachel aktiv: alle anderen gedimmt und nicht ansprechbar. Die
+   Aussage bleibt in Graustufen erkennbar (Deckkraft + Fokus-Ring mit Position,
+   nicht Farbe allein). */
+.bento-grid.is-focus-mode .bento-item {
+  opacity: var(--focus-dim-opacity);
+  pointer-events: none;
+}
+
+.bento-grid.is-focus-mode .bento-item.is-focused {
+  opacity: 1;
+  pointer-events: auto;
+  outline: 3px solid var(--accent);
+  outline-offset: -3px;
+}
+
+/* `enlarge`: Ziel-Kachel läuft über die volle Breite (Zeilen setzt der Host
+   dynamisch auf `span max(3, Höhe)`), ohne das Raster zu verändern. */
+.bento-grid.is-focus-mode .bento-item.is-focused.bento-item--focus-enlarge {
+  z-index: 1;
+  overflow: auto;
+}
+
+/* `fullscreen` erhält zusätzlich `bento-item--focus-fullscreen`; das Overlay
+   liefert WP-F1-4 (generisch bzw. `renderExpanded`). */
+
+/* Sichtbare Zurück-Schaltfläche: >= 44x44 px, kein Hover nötig (F). */
+.focus-back {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  z-index: 6;
+  display: grid;
+  place-items: center;
+  width: var(--tap-target);
+  height: var(--tap-target);
+  border-radius: var(--radius-control);
+  border: 1px solid var(--accent);
+  background: var(--accent-soft);
+  color: var(--text-primary);
+  font-size: 20px;
+  font-weight: 600;
 }
 
 /* --- Widget-Fehlerplatzhalter (E.3) -------------------------------------- */

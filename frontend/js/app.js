@@ -4,11 +4,29 @@
  * Ablauf: `/api/config` laden -> Tabs rendern -> pro Tab Instanzen auflösen
  * (Backend-Layout, sonst eingebaute Standardplatzierung) -> Widget-Runtime
  * laden. To-Dos laufen über SSE (`/api/events`), Cache-Daten über Polling (D6).
+ *
+ * Fokusmodus (spec-focus F): genau ein aktiver Fokus (highlight|enlarge|
+ * fullscreen), ausgelöst per Touch-Tap (`bento.js`) oder SSE `focus.changed`
+ * (Agent), jederzeit per Zurück-Schaltfläche/`Escape`/erneutem Tap zurücknehmbar.
+ * Der Fokus ist ein reines Anzeige-Overlay — `dashboard_layout` bleibt unberührt.
  */
 
 import { api } from "./api.js";
 import { BentoGrid } from "./bento.js";
 import { WidgetRuntime } from "./widget-runtime.js";
+
+/** Fokus-REST (spec-focus D.1): PUT/DELETE/GET /api/state/focus. */
+function getFocusState() {
+  return api.request("/api/state/focus");
+}
+
+function putFocusState(payload) {
+  return api.request("/api/state/focus", { method: "PUT", body: payload });
+}
+
+function deleteFocusState() {
+  return api.request("/api/state/focus", { method: "DELETE" });
+}
 
 /**
  * Eingebaute Widgets dieses Repos und ihr Ziel-Tab. Der Backend-Registry-Eintrag
@@ -58,7 +76,7 @@ export function pendingBuiltins(builtins, slug, presentIds, registry) {
 }
 
 const WIDGETS_TAB = "widgets";
-const SSE_EVENTS = ["task.created", "task.updated", "task.deleted", "screen.changed"];
+const SSE_EVENTS = ["task.created", "task.updated", "task.deleted", "screen.changed", "focus.changed"];
 
 /** Anzeigenamen der Manifest-Kategorien (Spezifikation E.2). */
 const CATEGORY_LABELS = {
@@ -192,12 +210,27 @@ export class DashboardApp {
     this.activeSlug = null;
     this.tabButtons = new Map();
     this.widgetRegistry = null;
+
+    // Fokusmodus (spec-focus F): genau ein aktiver Fokus, reines Overlay.
+    this.focus = null;
+    this.focusAutoResetSeconds = 0;
+    this.autoResetTimer = null;
+    this.focusBackButton = null;
+    this._focusTargetNode = null;
+    this._onFocusPointerDown = null;
+    this._onKeydown = (event) => {
+      if (event.key === "Escape" && this.focus) {
+        this.clearFocus();
+      }
+    };
   }
 
   async start() {
     const config = await api.getConfig();
     this.grid = config.grid || this.grid;
     const tabs = Array.isArray(config.tabs) ? config.tabs : [];
+    const reset = Number(config.focus_auto_reset_seconds);
+    this.focusAutoResetSeconds = Number.isFinite(reset) && reset > 0 ? reset : 0;
 
     this.renderTabs(tabs);
     await Promise.all(tabs.map((tab) => this.buildView(tab)));
@@ -209,6 +242,11 @@ export class DashboardApp {
       this.showTab(active, { persist: false });
     }
 
+    this.bus.on("focus.changed", (payload) => this.onFocusChanged(payload));
+    document.addEventListener?.("keydown", this._onKeydown);
+
+    await this.restoreFocus();
+
     this.eventStream = connectEventStream({
       bus: this.bus,
       onStatus: (state) => this.setConnection(state),
@@ -217,6 +255,21 @@ export class DashboardApp {
 
     // Debug-/Test-Handle (z. B. für den Fehlervertrag-Nachweis in WP-3).
     window.worldplaner = { app: this, runtime: this.runtime, bus: this.bus };
+  }
+
+  /**
+   * Persistierten Fokus beim Start anwenden (spec-focus F: „Reload bleibt
+   * persistent"). Backend ohne Fokus-State -> still ignorieren, kein Bruch.
+   */
+  async restoreFocus() {
+    try {
+      const current = await getFocusState();
+      if (current && current.value) {
+        this.setFocus({ ...current.value }, { persist: false });
+      }
+    } catch (error) {
+      this.log?.info?.("[focus] /api/state/focus nicht verfügbar", error?.message || error);
+    }
   }
 
   renderTabs(tabs) {
@@ -287,6 +340,7 @@ export class DashboardApp {
       minSizes,
       log: this.log,
       persist: (instance, rect) => this.persistPlacement(slug, instance, rect),
+      onFocusTap: (entry) => this.handleTileTap(entry),
     });
     this.grids.set(slug, bento);
 
@@ -395,6 +449,176 @@ export class DashboardApp {
       return api.createLayout({ widget_id: instance.widget_id, tab_id: tabId, ...body });
     }
     return api.updateLayout(instance.id, body);
+  }
+
+  // --- Fokusmodus (spec-focus F) -------------------------------------------
+
+  /** Signatur des aktiven Fokus — identische Echos werden idempotent ignoriert. */
+  _focusSignature(focus = this.focus) {
+    return focus ? `${focus.instance_id}|${focus.mode}|${focus.tab_id}` : "";
+  }
+
+  /**
+   * Touch-Pfad (F): ein Tap auf den Kachel-Body schaltet `enlarge` für genau
+   * diese Kachel ein; ein erneuter Tap auf die bereits fokussierte Kachel hebt
+   * den Fokus wieder auf.
+   */
+  handleTileTap(entry) {
+    if (!entry) {
+      return;
+    }
+    const instanceId = entry.instance.id;
+    if (this.focus && this.focus.instance_id === instanceId) {
+      this.clearFocus();
+      return;
+    }
+    this.setFocus({
+      widget_id: entry.instance.widget_id,
+      instance_id: instanceId,
+      tab_id: this.activeSlug,
+      mode: "enlarge",
+    });
+  }
+
+  /**
+   * Fokus setzen: ggf. Tab wechseln, Overlay anwenden, Auto-Reset starten und
+   * (Touch-Pfad) fire-and-forget persistieren. `persist:false` bei SSE/Start,
+   * damit das eigene Echo und der wiederhergestellte Zustand nicht erneut
+   * geschrieben werden.
+   */
+  setFocus({ widget_id, instance_id, tab_id, mode }, { persist = true } = {}) {
+    const tab = tab_id || this.activeSlug;
+    const next = { widget_id, instance_id, tab_id: tab, mode };
+    if (this.focus && this._focusSignature() === this._focusSignature(next)) {
+      return;
+    }
+    if (tab && tab !== this.activeSlug && this.views.has(tab)) {
+      this.showTab(tab, { persist: false });
+    }
+    this.focus = next;
+    this.applyFocusToDom();
+    this._restartAutoReset();
+    if (persist) {
+      this._persistFocus();
+    }
+    this.log?.info?.(`[focus] ${mode} ${widget_id} (${instance_id})`);
+  }
+
+  /** Fokus lokal und (falls `persist`) am Backend zurücksetzen. Idempotent. */
+  clearFocus({ persist = true } = {}) {
+    if (this.autoResetTimer) {
+      clearTimeout(this.autoResetTimer);
+      this.autoResetTimer = null;
+    }
+    const had = Boolean(this.focus);
+    this.focus = null;
+    this.applyFocusToDom();
+    if (had && persist) {
+      deleteFocusState().catch((error) =>
+        this.log?.warn?.("[focus] DELETE /api/state/focus fehlgeschlagen", error),
+      );
+    }
+    if (had) {
+      this.log?.info?.("[focus] aufgehoben");
+    }
+  }
+
+  _persistFocus() {
+    const { widget_id, mode, instance_id } = this.focus || {};
+    const body = { widget_id, mode };
+    // Fallback-Kacheln (`builtin:<id>`) haben (noch) keine Layout-Zeile; dann
+    // löst das Backend die Instanz selbst aus `widget_id` auf (spec-focus D.1).
+    if (instance_id && !String(instance_id).startsWith("builtin:")) {
+      body.instance_id = instance_id;
+    }
+    putFocusState(body).catch((error) =>
+      this.log?.warn?.("[focus] PUT /api/state/focus fehlgeschlagen", error),
+    );
+  }
+
+  /** Overlay anwenden: alle Grids räumen, dann nur den aktiven Tab fokussieren. */
+  applyFocusToDom() {
+    this._removeFocusBackButton();
+    this._unbindFocusReset();
+    for (const grid of this.grids.values()) {
+      grid.clearFocus();
+    }
+    if (!this.focus || this.activeSlug !== this.focus.tab_id) {
+      return;
+    }
+    const grid = this.grids.get(this.activeSlug);
+    const entry = grid && grid.get(this.focus.instance_id);
+    if (!entry) {
+      return;
+    }
+    grid.setFocus(this.focus.instance_id, this.focus.mode);
+    this._mountFocusBackButton(entry);
+    this._bindFocusReset(entry);
+  }
+
+  _restartAutoReset() {
+    if (this.autoResetTimer) {
+      clearTimeout(this.autoResetTimer);
+      this.autoResetTimer = null;
+    }
+    if (!this.focus || !(this.focusAutoResetSeconds > 0)) {
+      return;
+    }
+    this.autoResetTimer = setTimeout(
+      () => this.clearFocus(),
+      this.focusAutoResetSeconds * 1000,
+    );
+  }
+
+  /** Sichtbare Zurück-Schaltfläche (>= 44x44 px, `aria-label`) in der Kachel (F). */
+  _mountFocusBackButton(entry) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "focus-back";
+    button.textContent = "✕";
+    button.setAttribute("aria-label", "Fokus aufheben");
+    button.addEventListener("click", (event) => {
+      event.stopPropagation();
+      this.clearFocus();
+    });
+    entry.node.append(button);
+    this.focusBackButton = button;
+  }
+
+  _removeFocusBackButton() {
+    this.focusBackButton?.remove?.();
+    this.focusBackButton = null;
+  }
+
+  /** Jeder `pointerdown` auf der fokussierten Kachel setzt die Auto-Reset-Uhr (F). */
+  _bindFocusReset(entry) {
+    this._focusTargetNode = entry.node;
+    this._onFocusPointerDown = () => this._restartAutoReset();
+    entry.node.addEventListener("pointerdown", this._onFocusPointerDown);
+  }
+
+  _unbindFocusReset() {
+    if (this._focusTargetNode && this._onFocusPointerDown) {
+      this._focusTargetNode.removeEventListener("pointerdown", this._onFocusPointerDown);
+    }
+    this._focusTargetNode = null;
+    this._onFocusPointerDown = null;
+  }
+
+  /**
+   * SSE `focus.changed` (spec-focus D.2/F): Objekt -> Tab wechseln + anwenden;
+   * `null` -> Overlay entfernen. Das eigene Echo wird idempotent verworfen.
+   */
+  onFocusChanged(payload) {
+    const focus = payload && typeof payload === "object" ? payload.focus : null;
+    if (!focus) {
+      this.clearFocus({ persist: false });
+      return;
+    }
+    if (this.focus && this._focusSignature() === this._focusSignature(focus)) {
+      return;
+    }
+    this.setFocus({ ...focus }, { persist: false });
   }
 
   /**
@@ -728,6 +952,7 @@ export class DashboardApp {
     }
     section.replaceChildren();
     await this.buildBento(section, slug);
+    this.applyFocusToDom();
   }
 
   showTab(slug, { persist = true } = {}) {
@@ -746,6 +971,7 @@ export class DashboardApp {
         /* Der aktive Tab ist Komfort, kein Fehlerfall. */
       });
     }
+    this.applyFocusToDom();
   }
 
   setConnection(state) {

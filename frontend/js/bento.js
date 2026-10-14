@@ -10,7 +10,9 @@
  */
 
 export const LONG_PRESS_MS = 600;
-const MOVE_CANCEL_PX = 10;
+export const MOVE_CANCEL_PX = 10;
+/** Höchstdauer eines Fokus-Taps; darüber bleibt es ein Langdruck (F). */
+export const TAP_MAX_MS = 250;
 
 /** Rasterzelle -> CSS-Grid-Platzierung (0-basiert, `grid-*-start` 1-basiert). */
 export function gridPlacement({ x, y, w, h }) {
@@ -23,6 +25,43 @@ export function gridPlacement({ x, y, w, h }) {
 /** Überlappen sich zwei Rechtecke? (Berühren zählt nicht als Überlappung.) */
 export function rectsOverlap(a, b) {
   return !(a.x + a.w <= b.x || b.x + b.w <= a.x || a.y + a.h <= b.y || b.y + b.h <= a.y);
+}
+
+/**
+ * Tap-Erkennung für den Fokusmodus (Spezifikation F): kurzer Druck ohne
+ * nennenswerte Bewegung. `down`/`up` tragen `{t, x, y}` (Zeitstempel in ms).
+ */
+export function isTapGesture(down, up, { maxMs = TAP_MAX_MS, maxPx = MOVE_CANCEL_PX } = {}) {
+  if (!down || !up) {
+    return false;
+  }
+  const duration = up.t - down.t;
+  if (duration < 0 || duration > maxMs) {
+    return false;
+  }
+  return Math.hypot(up.x - down.x, up.y - down.y) < maxPx;
+}
+
+/**
+ * Bereiche, die keinen Fokus-Tap auslösen: Kachelkopfzeile, ⤡-Griff, per
+ * `data-no-focus` gesperrte Elemente und interaktive Kindelemente (z. B. der
+ * ⟳-Refresh-Button oder To-Do-Kästchen im Widget-Body, F).
+ */
+export const FOCUS_EXCLUDE_SELECTOR =
+  ".bento-item__header, .bento-item__handle, [data-no-focus], " +
+  "button, a[href], input, select, textarea, [role='button']";
+
+export function isFocusExcludedTarget(target) {
+  if (!target || typeof target.closest !== "function") {
+    return true;
+  }
+  return Boolean(target.closest(FOCUS_EXCLUDE_SELECTOR));
+}
+
+/** Ziel-Zeilenspan der vergrößerten Kachel: `span max(3, aktuelle Höhe)` (F). */
+export function enlargeRowSpan(height) {
+  const h = Number(height);
+  return Math.max(3, Number.isFinite(h) && h > 0 ? Math.ceil(h) : 1);
 }
 
 function clamp(value, min, max) {
@@ -39,6 +78,7 @@ export class BentoGrid {
    * @param {number} [options.gap=8]
    * @param {object} [options.minSizes]       widgetId -> {w,h}
    * @param {Function} [options.persist]      async (instance) => void
+   * @param {Function} [options.onFocusTap]   (entry, event) => void bei Fokus-Tap
    * @param {object} [options.log]
    */
   constructor({
@@ -49,6 +89,7 @@ export class BentoGrid {
     gap = 8,
     minSizes = {},
     persist = null,
+    onFocusTap = null,
     log = console,
   }) {
     this.element = element;
@@ -58,6 +99,7 @@ export class BentoGrid {
     this.gap = gap;
     this.minSizes = minSizes;
     this.persist = persist;
+    this.onFocusTap = onFocusTap;
     this.log = log;
     this.entries = new Map();
 
@@ -99,6 +141,7 @@ export class BentoGrid {
     this.entries.set(instance.id, entry);
     this._bindMove(entry);
     this._bindResize(entry);
+    this._bindTap(entry);
     return body;
   }
 
@@ -265,6 +308,82 @@ export class BentoGrid {
     });
     handle.addEventListener("pointerup", finish);
     handle.addEventListener("pointercancel", finish);
+  }
+
+  /**
+   * Fokus-Tap (Spezifikation F): `pointerdown -> pointerup` auf dem Kachel-Body
+   * mit Dauer <= `TAP_MAX_MS` und Bewegung < `MOVE_CANCEL_PX`. Kopfzeile, Griff,
+   * `data-no-focus` und interaktive Kindelemente sind ausgenommen.
+   */
+  _bindTap(entry) {
+    if (typeof this.onFocusTap !== "function") {
+      return;
+    }
+    const { node } = entry;
+    let start = null;
+
+    node.addEventListener("pointerdown", (event) => {
+      start = isFocusExcludedTarget(event.target)
+        ? null
+        : { t: event.timeStamp, x: event.clientX, y: event.clientY };
+    });
+    node.addEventListener("pointerup", (event) => {
+      const down = start;
+      start = null;
+      if (!down || isFocusExcludedTarget(event.target)) {
+        return;
+      }
+      const up = { t: event.timeStamp, x: event.clientX, y: event.clientY };
+      if (isTapGesture(down, up)) {
+        this.onFocusTap(entry, event);
+      }
+    });
+    node.addEventListener("pointercancel", () => {
+      start = null;
+    });
+  }
+
+  /**
+   * Fokus-Overlay setzen (Spezifikation F): `is-focus-mode` dimmt alle Kacheln,
+   * die Ziel-Kachel bleibt opak und erhält den Fokus-Ring. Bei `enlarge` wächst
+   * sie auf `grid-column: 1 / -1` und `grid-row: span max(3, Höhe)`. Das ist ein
+   * reines Anzeige-Overlay — `dashboard_layout` wird nicht berührt.
+   */
+  setFocus(instanceId, mode) {
+    const entries = [...this.entries.values()];
+    if (!entries.some((entry) => entry.instance.id === instanceId)) {
+      return null;
+    }
+    this.element.classList.add("is-focus-mode");
+    for (const entry of entries) {
+      const target = entry.instance.id === instanceId;
+      entry.node.classList.toggle("is-focused", target);
+      entry.node.classList.toggle("bento-item--focus-enlarge", target && mode === "enlarge");
+      entry.node.classList.toggle(
+        "bento-item--focus-fullscreen",
+        target && mode === "fullscreen",
+      );
+      if (target && mode === "enlarge") {
+        entry.node.style.gridColumn = "1 / -1";
+        entry.node.style.gridRow = `span ${enlargeRowSpan(entry.instance.h)}`;
+      } else {
+        this._applyRect(entry, entry.instance);
+      }
+    }
+    return this.entries.get(instanceId);
+  }
+
+  /** Fokus-Overlay entfernen und alle Kacheln auf ihre Rasterposition zurücksetzen. */
+  clearFocus() {
+    this.element.classList.remove("is-focus-mode");
+    for (const entry of this.entries.values()) {
+      entry.node.classList.remove(
+        "is-focused",
+        "bento-item--focus-enlarge",
+        "bento-item--focus-fullscreen",
+      );
+      this._applyRect(entry, entry.instance);
+    }
   }
 
   /** Validiert gegen Bounds/Überlappung, übernimmt und persistiert. */

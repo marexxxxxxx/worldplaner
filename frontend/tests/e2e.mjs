@@ -38,6 +38,273 @@ async function api(path, options = {}) {
   return { status: response.status, body: text ? JSON.parse(text) : null };
 }
 
+/**
+ * WP-F1-3 Fokusmodus (spec-focus F). Deckt die sechs Abnahmekriterien ab:
+ * Tap->enlarge + Dimmen, Zurueck/Escape/erneuter Tap, `focus.changed` (Agent),
+ * Auto-Reset + Timer-Ruecksetzung, kein `dashboard_layout`-Write.
+ *
+ * Ohne WP-F1-1 (`GET /api/state/focus`) wird der Block uebersprungen, damit die
+ * uebrige E2E-Suite auf einem Backend ohne Fokus-State gruen bleibt.
+ */
+async function focusChecks(browser, api) {
+  const probe = await api("/api/state/focus");
+  if (probe.status !== 200) {
+    check(
+      "WP-F1-3 Fokusmodus (uebersprungen: Backend ohne /api/state/focus)",
+      true,
+      `GET /api/state/focus -> ${probe.status}`,
+    );
+    return;
+  }
+
+  const context = await browser.newContext({ hasTouch: true, viewport: { width: 1024, height: 768 } });
+  const fp = await context.newPage();
+  const focusWrites = [];
+  const layoutWrites = [];
+  fp.on("request", (request) => {
+    const url = request.url();
+    if (url.includes("/api/state/focus")) {
+      focusWrites.push(request.method());
+    }
+    if (url.includes("/api/layout") && request.method() !== "GET") {
+      layoutWrites.push(`${request.method()} ${url}`);
+    }
+  });
+  const focusErrors = [];
+  fp.on("pageerror", (error) => focusErrors.push(String(error)));
+
+  const TILE = '.view[data-tab="dashboard"] .bento-item';
+  const BODY = '.view[data-tab="dashboard"] .bento-item .bento-item__body';
+
+  await fp.goto(BASE + "/", { waitUntil: "networkidle" });
+  await fp.waitForFunction(() => window.worldplaner, null, { timeout: 10000 });
+  await api("/api/state/focus", { method: "DELETE" });
+  await fp.evaluate(() => window.worldplaner.app.clearFocus({ persist: false }));
+
+  await fp.tap('.tab[data-tab="dashboard"]');
+  await fp.waitForSelector(TILE, { timeout: 5000 });
+
+  const targetId = await fp.$eval(TILE, (el) => el.dataset.instanceId);
+  const tileCount = await fp.$$eval(TILE, (nodes) => nodes.length);
+  const putsBefore = focusWrites.filter((method) => method === "PUT").length;
+
+  // 1) Tap auf den Kachel-Body -> enlarge, andere gedimmt
+  await fp.locator(BODY).first().tap({ position: { x: 6, y: 6 } });
+  await fp.waitForTimeout(200);
+  const enlarged = await fp.evaluate(() => {
+    const items = [...document.querySelectorAll('.view[data-tab="dashboard"] .bento-item')];
+    const focused = items.filter((el) => el.classList.contains("is-focused"));
+    const grid = document.querySelector('.view[data-tab="dashboard"] .bento-grid');
+    const back = document.querySelector(".focus-back");
+    const backRect = back ? back.getBoundingClientRect() : null;
+    const rowMatch = focused[0] ? /span\s+(\d+)/.exec(getComputedStyle(focused[0]).gridRow) : null;
+    return {
+      focusMode: grid.classList.contains("is-focus-mode"),
+      focusedCount: focused.length,
+      focusedId: focused[0] ? focused[0].dataset.instanceId : null,
+      enlargeClass: focused[0] ? focused[0].classList.contains("bento-item--focus-enlarge") : false,
+      gridColumn: focused[0] ? getComputedStyle(focused[0]).gridColumn : null,
+      gridRowNum: rowMatch ? Number(rowMatch[1]) : null,
+      focusedOpacity: focused[0] ? getComputedStyle(focused[0]).opacity : null,
+      focusedOutline: focused[0] ? getComputedStyle(focused[0]).outlineStyle : null,
+      others: items
+        .filter((el) => !el.classList.contains("is-focused"))
+        .map((el) => ({ op: getComputedStyle(el).opacity, pe: getComputedStyle(el).pointerEvents })),
+      back: backRect
+        ? {
+            label: back.getAttribute("aria-label"),
+            w: Math.round(backRect.width),
+            h: Math.round(backRect.height),
+          }
+        : null,
+    };
+  });
+  check(
+    "WP-F1-3 AC1 Tap (<=250ms/<10px) -> enlarge, andere gedimmt",
+    enlarged.focusMode &&
+      enlarged.focusedCount === 1 &&
+      enlarged.focusedId === targetId &&
+      enlarged.enlargeClass &&
+      /1\s*\/\s*-1/.test(enlarged.gridColumn || "") &&
+      enlarged.gridRowNum >= 3 &&
+      enlarged.focusedOpacity === "1" &&
+      enlarged.others.length === tileCount - 1 &&
+      enlarged.others.every((other) => other.op === "0.2" && other.pe === "none"),
+    JSON.stringify(enlarged),
+  );
+  check(
+    "WP-F1-3 AC1 Fokus-Ring sichtbar ohne Hover",
+    enlarged.focusedOutline === "solid",
+    `outline=${enlarged.focusedOutline}`,
+  );
+  check(
+    "WP-F1-3 AC2 Zurueck-Schaltflaeche >= 44x44 mit aria-label",
+    Boolean(enlarged.back) &&
+      enlarged.back.w >= 44 &&
+      enlarged.back.h >= 44 &&
+      Boolean(enlarged.back.label),
+    JSON.stringify(enlarged.back),
+  );
+  check(
+    "WP-F1-3 AC5 Touch-Pfad schreibt PUT /api/state/focus, kein dashboard_layout-Write",
+    focusWrites.filter((method) => method === "PUT").length === putsBefore + 1 &&
+      layoutWrites.length === 0,
+    `focusWrites=${JSON.stringify(focusWrites)} layoutWrites=${JSON.stringify(layoutWrites)}`,
+  );
+  await fp.screenshot({ path: `${SHOT_DIR}/04-focus-enlarge.png` });
+
+  // 2) Zurueck-Schaltflaeche -> clearFocus + DELETE
+  await fp.locator(".focus-back").tap();
+  await fp.waitForTimeout(200);
+  const clearedByBack = await fp.evaluate(() => ({
+    focused: document.querySelectorAll(".bento-item.is-focused").length,
+    focusMode: document.querySelectorAll(".bento-grid.is-focus-mode").length,
+    back: Boolean(document.querySelector(".focus-back")),
+  }));
+  check(
+    "WP-F1-3 AC2 Zurueck-Schaltflaeche -> clearFocus + DELETE",
+    clearedByBack.focused === 0 &&
+      clearedByBack.focusMode === 0 &&
+      !clearedByBack.back &&
+      focusWrites.includes("DELETE"),
+    JSON.stringify(clearedByBack),
+  );
+
+  // 3) Escape -> clearFocus
+  await fp.locator(BODY).first().tap({ position: { x: 6, y: 6 } });
+  await fp.waitForTimeout(150);
+  await fp.keyboard.press("Escape");
+  await fp.waitForTimeout(150);
+  const clearedByEscape = await fp.evaluate(
+    () => document.querySelectorAll(".bento-item.is-focused").length,
+  );
+  check("WP-F1-3 AC2 Escape -> clearFocus", clearedByEscape === 0, `focused=${clearedByEscape}`);
+
+  // 4) erneuter Tap auf die bereits fokussierte Kachel -> clearFocus
+  await fp.locator(BODY).first().tap({ position: { x: 6, y: 6 } });
+  await fp.waitForTimeout(150);
+  const refocused = await fp.evaluate(
+    () => document.querySelectorAll(".bento-item.is-focused").length,
+  );
+  await fp.locator(BODY).first().tap({ position: { x: 6, y: 6 } });
+  await fp.waitForTimeout(150);
+  const toggledOff = await fp.evaluate(
+    () => document.querySelectorAll(".bento-item.is-focused").length,
+  );
+  check(
+    "WP-F1-3 AC2 erneuter Tap auf fokussierte Kachel -> clearFocus",
+    refocused === 1 && toggledOff === 0,
+    `refocused=${refocused} toggledOff=${toggledOff}`,
+  );
+
+  // 5) Agent-Pfad: focus.changed (SSE) wendet Fokus an, focus:null entfernt ihn
+  const layout = await api("/api/layout?tab=dashboard");
+  const row = Array.isArray(layout.body) ? layout.body[0] : null;
+  let sseApplied = false;
+  let sseCleared = false;
+  if (row) {
+    const put = await api("/api/state/focus", {
+      method: "PUT",
+      body: JSON.stringify({ widget_id: row.widget_id, mode: "highlight" }),
+    });
+    const focus = put.body && put.body.focus;
+    const isFocused = (id) =>
+      [...document.querySelectorAll(".bento-item")].some(
+        (el) => el.classList.contains("is-focused") && el.dataset.instanceId === id,
+      );
+    await fp
+      .waitForFunction(isFocused, focus.instance_id, { timeout: 5000 })
+      .catch(() => {});
+    sseApplied = await fp.evaluate(isFocused, focus.instance_id);
+
+    // `fullscreen` (F): Host wendet den Overlay-Marker an; das Overlay selbst
+    // liefert WP-F1-4. Der Zustand ist auch hier genau eine Kachel.
+    await api("/api/state/focus", {
+      method: "PUT",
+      body: JSON.stringify({ widget_id: row.widget_id, mode: "fullscreen" }),
+    });
+    await fp
+      .waitForFunction(
+        (id) =>
+          [...document.querySelectorAll(".bento-item")].some(
+            (el) =>
+              el.classList.contains("is-focused") &&
+              el.classList.contains("bento-item--focus-fullscreen") &&
+              el.dataset.instanceId === id,
+          ),
+        focus.instance_id,
+        { timeout: 5000 },
+      )
+      .catch(() => {});
+    const fullscreenApplied = await fp.evaluate(
+      (id) =>
+        [...document.querySelectorAll(".bento-item")].some(
+          (el) =>
+            el.classList.contains("is-focused") &&
+            el.classList.contains("bento-item--focus-fullscreen") &&
+            el.dataset.instanceId === id,
+        ),
+      focus.instance_id,
+    );
+
+    await api("/api/state/focus", { method: "DELETE" });
+    await fp
+      .waitForFunction(() => !document.querySelector(".bento-item.is-focused"), null, { timeout: 5000 })
+      .catch(() => {});
+    sseCleared = await fp.evaluate(() => !document.querySelector(".bento-item.is-focused"));
+    check("WP-F1-3 AC3/AC5 focus.changed mode=fullscreen setzt Overlay-Marker (WP-F1-4)", fullscreenApplied);
+  }
+  check(
+    "WP-F1-3 AC3 focus.changed (Agent) wendet Fokus an, focus:null entfernt ihn",
+    sseApplied && sseCleared,
+    `applied=${sseApplied} cleared=${sseCleared}`,
+  );
+  await fp.screenshot({ path: `${SHOT_DIR}/05-focus-agent.png` });
+
+  // 6) Auto-Reset + pointerdown setzt den Timer zurueck
+  if (row) {
+    await fp.evaluate(() => {
+      window.worldplaner.app.focusAutoResetSeconds = 1;
+    });
+    await api("/api/state/focus", {
+      method: "PUT",
+      body: JSON.stringify({ widget_id: row.widget_id, mode: "highlight" }),
+    });
+    await fp.waitForTimeout(1500);
+    const autoCleared = await fp.evaluate(() => !document.querySelector(".bento-item.is-focused"));
+    check("WP-F1-3 AC4 Auto-Reset nach focus_auto_reset_seconds", autoCleared);
+
+    await fp.evaluate(() => {
+      window.worldplaner.app.focusAutoResetSeconds = 2;
+    });
+    await api("/api/state/focus", {
+      method: "PUT",
+      body: JSON.stringify({ widget_id: row.widget_id, mode: "highlight" }),
+    });
+    await fp.waitForSelector(".bento-item.is-focused", { timeout: 5000 });
+    await fp.waitForTimeout(1200);
+    const focusedId = await fp.$eval(".bento-item.is-focused", (el) => el.dataset.instanceId);
+    await fp.evaluate((id) => {
+      document
+        .querySelector(`.bento-item[data-instance-id="${id}"]`)
+        .dispatchEvent(new PointerEvent("pointerdown", { bubbles: true }));
+    }, focusedId);
+    await fp.waitForTimeout(1000);
+    const resetHeld = await fp.evaluate(() =>
+      Boolean(document.querySelector(".bento-item.is-focused")),
+    );
+    check("WP-F1-3 AC4 pointerdown auf fokussierter Kachel setzt Timer zurueck", resetHeld);
+    await api("/api/state/focus", { method: "DELETE" });
+  }
+
+  check(
+    "WP-F1-3 keine Page-Errors im Fokuspfad",
+    focusErrors.length === 0,
+    JSON.stringify(focusErrors),
+  );
+  await context.close();
+}
+
 const browser = await chromium.launch({ executablePath: EXEC, args: ["--no-sandbox"] });
 const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
 
@@ -326,6 +593,9 @@ try {
       `rows=${JSON.stringify(layoutRows.body)} pageErrors=${errorsSoFar}`,
     );
   }
+
+  // WP-F1-3: Fokusmodus (Tap/SSE/Auto-Reset) — eigener Touch-Kontext.
+  await focusChecks(browser, api);
 
   // (1) destroy
   await page.reload({ waitUntil: "networkidle" });
