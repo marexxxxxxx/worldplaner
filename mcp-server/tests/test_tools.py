@@ -41,12 +41,38 @@ class FakeBackend:
         self.created: list[dict[str, Any]] = []
         self.workouts: list[dict[str, Any]] = []
         self.states: dict[str, str] = {}
+        # Layout wie die Backend-API: Instanz-UUID heisst hier `id`.
+        self.layout: list[dict[str, Any]] = [
+            {
+                "id": "inst-cal",
+                "widget_id": "baikal-calendar",
+                "tab_id": "dashboard",
+                "x": 0,
+                "y": 0,
+                "w": 4,
+                "h": 4,
+                "config_override": {},
+            },
+            {
+                "id": "inst-workout",
+                "widget_id": "garmin-workout",
+                "tab_id": "todos",
+                "x": 2,
+                "y": 1,
+                "w": 6,
+                "h": 3,
+                "config_override": {},
+            },
+        ]
+        self.focus_calls: list[tuple[str, str, str | None]] = []
+        self.focus_cleared = 0
 
     def _guard(self) -> None:
         if self.explode:
             raise RuntimeError("absichtlicher Testfehler")
         if self.unavailable:
             raise BackendError("BACKEND_UNAVAILABLE", "Backend nicht erreichbar", True)
+
 
     async def get_config(self) -> dict[str, Any]:
         self._guard()
@@ -70,6 +96,12 @@ class FakeBackend:
     async def get_task(self, task_id: str) -> dict[str, Any] | None:
         self._guard()
         return self.task if task_id == self.task["id"] else None
+
+    async def list_layout(self, tab: str | None = None) -> list[dict[str, Any]]:
+        self._guard()
+        if tab is None:
+            return list(self.layout)
+        return [item for item in self.layout if item["tab_id"] == tab]
 
     async def create_task(self, **kwargs: Any) -> dict[str, Any]:
         self._guard()
@@ -108,6 +140,31 @@ class FakeBackend:
     async def set_state(self, key: str, value: str) -> None:
         self._guard()
         self.states[key] = value
+
+    async def set_focus(self, widget_id: str, mode: str) -> dict[str, Any]:
+        self._guard()
+        instance = next(
+            (item for item in self.layout if item["widget_id"] == widget_id), None
+        )
+        if instance is None:
+            raise BackendError(
+                "NOT_FOUND", f"Widget {widget_id} ist auf keinem Tab platziert"
+            )
+        focus = {
+            "widget_id": widget_id,
+            "instance_id": instance["id"],
+            "tab_id": instance["tab_id"],
+            "mode": mode,
+            "ts": "2026-10-14T12:00:00Z",
+        }
+        self.focus_calls.append((widget_id, mode, instance["id"]))
+        self.states["focus"] = focus
+        return focus
+
+    async def clear_focus(self) -> None:
+        self._guard()
+        self.focus_cleared += 1
+        self.states["focus"] = None
 
 
 class FakeDisplay:
@@ -265,6 +322,128 @@ def test_dashboard_status_aggregates():
     assert result["tasks"] == {"open": 1, "done": 0}
     assert result["backend"] == "ok"
     assert result["last_garmin_sync"] is None
+    # spec-focus D.3: focus (null) und tiles des aktiven Tabs.
+    assert result["focus"] is None
+    assert result["tiles"] == [
+        {
+            "widget_id": "baikal-calendar",
+            "instance_id": "inst-cal",
+            "tab_id": "dashboard",
+            "x": 0,
+            "y": 0,
+            "w": 4,
+            "h": 4,
+        }
+    ]
+
+
+# --- dashboard_focus / dashboard_reset (WP-F1-2, spec-focus D.3) -----------
+
+
+def test_dashboard_focus_returns_focus_object():
+    tools = build()
+    result = run(
+        tools.dispatch(
+            "dashboard_focus", {"widget_id": "baikal-calendar", "mode": "enlarge"}
+        )
+    )
+    assert result["ok"] is True
+    assert result["focus"] == {
+        "widget_id": "baikal-calendar",
+        "instance_id": "inst-cal",
+        "tab_id": "dashboard",
+        "mode": "enlarge",
+        "ts": "2026-10-14T12:00:00Z",
+    }
+    assert tools._backend.focus_calls == [("baikal-calendar", "enlarge", "inst-cal")]
+
+
+def test_dashboard_focus_unknown_widget_is_not_found():
+    tools = build()
+    result = run(
+        tools.dispatch("dashboard_focus", {"widget_id": "gibt-es-nicht", "mode": "highlight"})
+    )
+    assert result["ok"] is False
+    assert result["error"]["code"] == "NOT_FOUND"
+    assert tools._backend.focus_calls == []
+
+
+def test_dashboard_focus_missing_mode_is_validation_error():
+    tools = build()
+    result = run(tools.dispatch("dashboard_focus", {"widget_id": "baikal-calendar"}))
+    assert result["ok"] is False
+    assert result["error"]["code"] == "VALIDATION_ERROR"
+    assert "mode" in result["error"]["message"]
+    assert tools._backend.states.get("focus") is None
+
+
+def test_dashboard_focus_rejects_unknown_mode():
+    tools = build()
+    result = run(
+        tools.dispatch(
+            "dashboard_focus", {"widget_id": "baikal-calendar", "mode": "zoom"}
+        )
+    )
+    assert result["error"]["code"] == "VALIDATION_ERROR"
+
+
+def test_dashboard_focus_rejects_extra_field():
+    tools = build()
+    result = run(
+        tools.dispatch(
+            "dashboard_focus",
+            {"widget_id": "baikal-calendar", "mode": "enlarge", "unexpected": 1},
+        )
+    )
+    assert result["error"]["code"] == "VALIDATION_ERROR"
+
+
+def test_dashboard_focus_backend_unavailable_is_reported_not_raised():
+    tools = build(unavailable=True)
+    result = run(
+        tools.dispatch(
+            "dashboard_focus", {"widget_id": "baikal-calendar", "mode": "enlarge"}
+        )
+    )
+    assert result["ok"] is False
+    assert result["error"]["code"] == "BACKEND_UNAVAILABLE"
+    assert result["error"]["retryable"] is True
+
+
+def test_dashboard_reset_returns_null_focus():
+    tools = build()
+    result = run(tools.dispatch("dashboard_reset", {}))
+    assert result == {"ok": True, "focus": None}
+    assert tools._backend.focus_cleared == 1
+
+
+def test_dashboard_reset_rejects_extra_field():
+    tools = build()
+    result = run(tools.dispatch("dashboard_reset", {"widget_id": "x"}))
+    assert result["error"]["code"] == "VALIDATION_ERROR"
+    assert tools._backend.focus_cleared == 0
+
+
+def test_dashboard_reset_backend_unavailable_is_reported_not_raised():
+    tools = build(unavailable=True)
+    result = run(tools.dispatch("dashboard_reset", {}))
+    assert result["ok"] is False
+    assert result["error"]["code"] == "BACKEND_UNAVAILABLE"
+
+
+def test_dashboard_status_reports_active_focus_and_tiles():
+    tools = build()
+    run(
+        tools.dispatch(
+            "dashboard_focus", {"widget_id": "garmin-workout", "mode": "fullscreen"}
+        )
+    )
+    result = run(tools.dispatch("dashboard_status", {}))
+    assert result["ok"] is True
+    assert result["focus"]["widget_id"] == "garmin-workout"
+    assert result["focus"]["mode"] == "fullscreen"
+    # tiles zeigt weiterhin den aktiven Tab aus der Config ("dashboard").
+    assert [tile["widget_id"] for tile in result["tiles"]] == ["baikal-calendar"]
 
 
 # --- garmin_add_workout (WP-P2-5) ------------------------------------------

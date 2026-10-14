@@ -50,6 +50,27 @@ _EMPTY_SCHEMA = {"type": "object", "additionalProperties": False, "properties": 
 
 DASHBOARD_STATUS_SCHEMA = dict(_EMPTY_SCHEMA)
 
+# inputSchema woertlich aus spec-focus D.3 (oeffentliche API: unveraendert).
+DASHBOARD_FOCUS_SCHEMA = {
+    "type": "object",
+    "additionalProperties": False,
+    "required": ["widget_id", "mode"],
+    "properties": {
+        "widget_id": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Registrierungs-ID der Kachel (z. B. baikal-calendar)",
+        },
+        "mode": {
+            "type": "string",
+            "enum": ["highlight", "enlarge", "fullscreen"],
+            "description": "highlight=andere dimmen; enlarge=vergroessern; fullscreen=Vollbild",
+        },
+    },
+}
+
+DASHBOARD_RESET_SCHEMA = dict(_EMPTY_SCHEMA)
+
 TASK_LIST_SCHEMA = {
     "type": "object",
     "additionalProperties": False,
@@ -152,12 +173,39 @@ TOOL_DEFS: list[dict[str, Any]] = [
         "description": (
             "Liest den Gesamtzustand des Dashboards (nur lesend, keine Nebenwirkung): "
             "aktiver Tab, Bildschirmzustand (on/off) und Helligkeit, Anzahl offener und "
-            "erledigter To-Dos, Backend-Gesundheit. Aendert nichts. Hinweis: "
+            "erledigter To-Dos, Backend-Gesundheit. Zusaetzlich `focus` (aktueller Fokus "
+            "oder null) und `tiles` (Layout-Kacheln des aktiven Tabs mit "
+            "widget_id/instance_id/tab_id/x/y/w/h) — damit der Agent gueltige "
+            "`widget_id`s entdecken kann. Aendert nichts. Hinweis: "
             "`last_garmin_sync` ist im MVP immer null, weil die Backend-REST-API "
             "(D.5) keinen Sync-Zeitstempel liefert."
         ),
         "inputSchema": DASHBOARD_STATUS_SCHEMA,
         "read_only": True,
+    },
+    {
+        "name": "dashboard_focus",
+        "description": (
+            "Hebt genau eine Kachel hervor/vergroessert sie/zeigt sie im Vollbild "
+            "(schreibend). Wann: wenn der Nutzer eine bestimmte Kachel sehen will. "
+            "Pflicht: `widget_id` (Registrierungs-ID, z. B. baikal-calendar) und `mode` "
+            "(highlight|enlarge|fullscreen). Der MCP-Server delegiert an "
+            "`PUT /api/state/focus`; das Backend loest die Kachel ueber alle Tabs auf "
+            "und waehlt deren Tab automatisch — der Aufrufer kann den Tab nicht setzen. "
+            "Eine `widget_id` ohne Layout-Instanz liefert NOT_FOUND. Grenze: veraendert "
+            "nur den Anzeigefokus, nie das Layout."
+        ),
+        "inputSchema": DASHBOARD_FOCUS_SCHEMA,
+    },
+    {
+        "name": "dashboard_reset",
+        "description": (
+            "Setzt einen aktiven Kachel-Fokus zurueck (schreibend, idempotent). Wann: "
+            "um Hervorhebung/Vergroesserung/Vollbild wieder aufzuheben. Ohne Argumente; "
+            "delegiert an `DELETE /api/state/focus`. Erfolg: `{ok:true, focus:null}`, "
+            "auch wenn zuvor kein Fokus gesetzt war."
+        ),
+        "inputSchema": DASHBOARD_RESET_SCHEMA,
     },
     {
         "name": "task_list",
@@ -294,6 +342,34 @@ def _as_float(value: Any, default: float) -> float:
     return default
 
 
+# Feldreihenfolge wie in spec-focus D.3: widget_id/instance_id/tab_id/x/y/w/h.
+_LAYOUT_FIELDS = ("widget_id", "tab_id", "x", "y", "w", "h")
+
+
+def _tiles(instances: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Reduziert Layout-Instanzen auf die oeffentlichen Tile-Felder.
+
+    Die Backend-API nennt die Instanz-UUID ``id``; fuer den MCP-Aufrufer heisst
+    sie ``instance_id`` (spec-focus D.3, Review-Hinweis Plan 11.6).
+    """
+    tiles: list[dict[str, Any]] = []
+    for instance in instances:
+        if not isinstance(instance, dict):
+            continue
+        tiles.append(
+            {
+                "widget_id": instance.get("widget_id"),
+                "instance_id": instance.get("id"),
+                "tab_id": instance.get("tab_id"),
+                "x": instance.get("x"),
+                "y": instance.get("y"),
+                "w": instance.get("w"),
+                "h": instance.get("h"),
+            }
+        )
+    return tiles
+
+
 class Tools:
     """Validierung an der Grenze, Ausfuehrung in den Handlern (F.1)."""
 
@@ -309,6 +385,8 @@ class Tools:
         }
         self._handlers: dict[str, Callable[[dict[str, Any]], Awaitable[dict[str, Any]]]] = {
             "dashboard_status": self._dashboard_status,
+            "dashboard_focus": self._dashboard_focus,
+            "dashboard_reset": self._dashboard_reset,
             "task_list": self._task_list,
             "task_create": self._task_create,
             "task_update": self._task_update,
@@ -342,21 +420,36 @@ class Tools:
 
     async def _dashboard_status(self, _: dict[str, Any]) -> dict[str, Any]:
         config = await self._backend.get_config()
+        active_tab = config.get("active_tab")
         screen = await self._backend.get_state("screen")
         if not isinstance(screen, str) or not screen:
             screen = "on"
         brightness = _as_float(await self._backend.get_state("brightness"), 1.0)
+        focus = await self._backend.get_state("focus")
+        if not isinstance(focus, dict):
+            focus = None
+        tiles = _tiles(await self._backend.list_layout(active_tab))
         open_tasks = await self._backend.list_tasks("open", 200)
         done_tasks = await self._backend.list_tasks("done", 200)
         health = await self._backend.health()
         return ok(
-            active_tab=config.get("active_tab"),
+            active_tab=active_tab,
             screen=screen,
             brightness=brightness,
             tasks={"open": len(open_tasks), "done": len(done_tasks)},
             last_garmin_sync=None,
             backend=health,
+            focus=focus,
+            tiles=tiles,
         )
+
+    async def _dashboard_focus(self, args: dict[str, Any]) -> dict[str, Any]:
+        focus = await self._backend.set_focus(args["widget_id"], args["mode"])
+        return ok(focus=focus)
+
+    async def _dashboard_reset(self, _: dict[str, Any]) -> dict[str, Any]:
+        await self._backend.clear_focus()
+        return ok(focus=None)
 
     async def _task_list(self, args: dict[str, Any]) -> dict[str, Any]:
         status = args.get("status", "all")

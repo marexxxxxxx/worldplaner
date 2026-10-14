@@ -136,10 +136,58 @@ class BackendClient:
                 return task
         return None
 
+    async def list_layout(self, tab: str | None = None) -> list[dict[str, Any]]:
+        """Layout-Instanzen, optional auf einen Tab gefiltert (D.3).
+
+        Liefert die Rohobjekte der Backend-API (Feld ``id`` = Instanz-UUID);
+        die MCP-Schicht benennt ``id`` fuer den Aufrufer in ``instance_id`` um
+        (spec-focus D.3). Eine Antwort, die keine Liste ist, ist ein
+        Vertragsbruch und wird als BACKEND_UNAVAILABLE gemeldet — kein leeres
+        Erfolgsergebnis.
+        """
+        params = {"tab": tab} if tab is not None else None
+        response = await self._request("GET", "/api/layout", params=params)
+        instances = response.json()
+        if not isinstance(instances, list):
+            raise BackendError(
+                "BACKEND_UNAVAILABLE",
+                "Backend liefert keine Layout-Liste",
+                retryable=True,
+            )
+        return instances
+
     # --- Schreibzugriffe (ausschliesslich ueber REST, D3) ------------------
 
     async def set_state(self, key: str, value: str) -> None:
         await self._request("PUT", f"/api/state/{key}", json={"value": value})
+
+    # --- Fokus (Ausbaustufe F1, spec-focus D.1/D.3) ------------------------
+
+    async def set_focus(self, widget_id: str, mode: str) -> dict[str, Any]:
+        """Setzt den Dashboard-Fokus (PUT /api/state/focus).
+
+        Das Backend loest ``widget_id`` autoritativ zu ``instance_id``/``tab_id``
+        auf und waehlt den Tab der Kachel; eine Kachel ohne Layout-Instanz
+        liefert NOT_FOUND. Fehlt das ``focus``-Objekt in der Antwort, gilt die
+        Antwort als ungueltig (kein stiller Erfolg).
+        """
+        response = await self._request(
+            "PUT",
+            "/api/state/focus",
+            json={"widget_id": widget_id, "mode": mode},
+        )
+        focus = (response.json() or {}).get("focus")
+        if not isinstance(focus, dict):
+            raise BackendError(
+                "BACKEND_UNAVAILABLE",
+                "Backend liefert kein Fokus-Objekt",
+                retryable=True,
+            )
+        return focus
+
+    async def clear_focus(self) -> None:
+        """Loescht den Dashboard-Fokus (DELETE /api/state/focus)."""
+        await self._request("DELETE", "/api/state/focus")
 
     async def create_task(
         self,
