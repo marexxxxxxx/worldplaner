@@ -22,16 +22,40 @@ import { WidgetRuntime } from "./widget-runtime.js";
 /** Polling-Intervalle der Cache-Widgets (Spezifikation I.4). */
 const POLL_WEATHER_MS = 10 * 60 * 1000;
 const POLL_GARMIN_MS = 5 * 60 * 1000;
+/**
+ * Pull-/Cache-Widgets, deren Quelle das Backend in `api_cache` puffert
+ * (TTL 600 s): Baikal, Grocy, Mealie. Takt 10 min wie das Wetter-Widget; die
+ * Widgets gelten erst nach 15 min ohne frischen Wert als veraltet, der Takt
+ * liegt also sicher darunter.
+ */
+const POLL_CACHE_MS = 10 * 60 * 1000;
 
-const BUILTIN_WIDGETS = [
+export const BUILTIN_WIDGETS = [
   // Wetter und Garmin sind Cache-Daten -> Polling (Wetter 10 min, Garmin 5 min, I.4).
   { id: "weather", tab: "dashboard", pollMs: POLL_WEATHER_MS },
   { id: "garmin-sleep", tab: "dashboard", pollMs: POLL_GARMIN_MS },
   { id: "garmin-readiness", tab: "dashboard", pollMs: POLL_GARMIN_MS },
   { id: "garmin-vitals", tab: "dashboard", pollMs: POLL_GARMIN_MS },
   { id: "garmin-workout", tab: "dashboard", pollMs: POLL_GARMIN_MS },
+  // Phase-2-Widgets (WP-P2-1/2/3): api_cache-gepuffert (TTL 600 s) -> 10-min-Takt.
+  { id: "baikal-calendar", tab: "dashboard", pollMs: POLL_CACHE_MS },
+  { id: "grocy-stock", tab: "dashboard", pollMs: POLL_CACHE_MS },
+  { id: "mealie-mealplan", tab: "dashboard", pollMs: POLL_CACHE_MS },
   { id: "hermes-todos", tab: "todos", pollMs: 0 },
 ];
+
+/**
+ * Eingebaute Widgets, die auf `slug` noch keine Layout-Zeile haben und nicht
+ * deaktiviert sind. Genau diese Ergänzung macht neu hinzugekommene eingebaute
+ * Widgets auf einer bereits geseedeten Installation sichtbar, ohne sie manuell
+ * zu platzieren — der Backend-Seed legt Standardzeilen nur bei leerer
+ * `dashboard_layout`-Tabelle an (`backend/app/db.py` `seed_builtin_widgets`).
+ */
+export function pendingBuiltins(builtins, slug, presentIds, registry) {
+  return builtins.filter(
+    (def) => def.tab === slug && !presentIds.has(def.id) && isWidgetEnabled(registry, def.id),
+  );
+}
 
 const WIDGETS_TAB = "widgets";
 const SSE_EVENTS = ["task.created", "task.updated", "task.deleted", "screen.changed"];
@@ -155,7 +179,8 @@ async function safeGetWidgets() {
   }
 }
 
-class DashboardApp {
+/** App-Klasse; exportiert, damit Tests `resolveInstances` ohne Browser fahren können. */
+export class DashboardApp {
   constructor({ log = console } = {}) {
     this.log = log;
     this.bus = new EventBus();
@@ -316,10 +341,7 @@ class DashboardApp {
     }
 
     const present = new Set(resolved.map((instance) => instance.widget_id));
-    for (const def of BUILTIN_WIDGETS) {
-      if (def.tab !== slug || present.has(def.id) || !isWidgetEnabled(registry, def.id)) {
-        continue;
-      }
+    for (const def of pendingBuiltins(BUILTIN_WIDGETS, slug, present, registry)) {
       const descriptor = await this.resolveManifest(def.id);
       if (!descriptor) {
         continue;
