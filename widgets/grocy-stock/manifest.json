@@ -1,0 +1,33 @@
+{
+  "id": "grocy-stock",
+  "name": "Vorratsbestand",
+  "version": "1.0.0",
+  "author": "Marex Agent Developer",
+  "description": "Aktueller Vorrats-/Lebensmittelbestand aus Grocy: Produkt, Menge, Einheit und naechstes MHD aus GET /api/grocy/stock (600 s gecacht).",
+  "category": "general",
+  "icon": "icon.svg",
+  "permissions": ["grocy"],
+  "config_schema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "expiring_days": {
+        "type": "integer",
+        "minimum": 0,
+        "default": 3,
+        "description": "MHD innerhalb dieser Tage gilt als bald ablaufend."
+      },
+      "limit": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 50,
+        "default": 8,
+        "description": "Maximal in der Liste angezeigte Produkte."
+      }
+    }
+  },
+  "default_size": { "w": 4, "h": 4 },
+  "min_size": { "w": 3, "h": 3 },
+  "max_instances": 1,
+  "tags": ["grocy", "vorrat", "bestand", "mhd"]
+}

@@ -1,0 +1,162 @@
+/* Grocy-Vorratsbestand — Widget-Styles, gescoped ueber die Host-Klasse
+   .wg-grocy-stock (E.1). Palette nach I.2; jeder Produkt-Zustand traegt
+   zusaetzlich eine Glyphe UND Text, damit die Aussage in Graustufen besteht. */
+
+.wg-grocy-stock {
+  --gs-ok: #3b82f6;
+  --gs-soon: #f59e0b;
+  --gs-expired: #f87171;
+  height: 100%;
+  min-height: 0;
+  color: var(--text-primary, #f5f5f5);
+}
+
+.wg-grocy-stock .gs {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  height: 100%;
+  min-height: 0;
+}
+
+.wg-grocy-stock .gs-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.wg-grocy-stock .gs-label {
+  color: var(--text-secondary, #a3a3a3);
+  font-size: 14px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+/* 44 x 44 Tap-Target (I.3), keine Hover-Abhaengigkeit. */
+.wg-grocy-stock .gs-refresh {
+  display: grid;
+  place-items: center;
+  width: var(--tap-target, 44px);
+  height: var(--tap-target, 44px);
+  flex: 0 0 var(--tap-target, 44px);
+  border-radius: var(--radius-control, 12px);
+  border: 1px solid var(--line-strong, #242424);
+  background: var(--bg, #050505);
+  color: var(--text-secondary, #a3a3a3);
+  font-size: 20px;
+  line-height: 1;
+}
+
+.wg-grocy-stock .gs-value {
+  margin: 0;
+  font-size: 44px;
+  font-weight: 600;
+  line-height: 1.05;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-primary, #f5f5f5);
+}
+
+.wg-grocy-stock .gs-sub {
+  margin: 0;
+  color: var(--text-secondary, #a3a3a3);
+  font-size: 14px;
+}
+
+.wg-grocy-stock .gs-list {
+  list-style: none;
+  margin: 4px 0 0;
+  padding: 0;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.wg-grocy-stock .gs-item {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.wg-grocy-stock .gs-item__glyph {
+  flex: 0 0 auto;
+  font-size: 14px;
+}
+
+.wg-grocy-stock .gs-item__main {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.wg-grocy-stock .gs-item__title {
+  font-size: 15px;
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wg-grocy-stock .gs-item__meta {
+  color: var(--text-secondary, #a3a3a3);
+  font-size: 12px;
+}
+
+.wg-grocy-stock .gs-item[data-status="expired"] .gs-item__glyph,
+.wg-grocy-stock .gs-item[data-status="expired"] .gs-item__title {
+  color: var(--gs-expired);
+}
+
+.wg-grocy-stock .gs-item[data-status="soon"] .gs-item__glyph {
+  color: var(--gs-soon);
+}
+
+.wg-grocy-stock .gs-empty,
+.wg-grocy-stock .gs-more {
+  color: var(--text-secondary, #a3a3a3);
+  font-size: 13px;
+}
+
+.wg-grocy-stock .gs-context {
+  margin: 0;
+  color: var(--text-secondary, #a3a3a3);
+  font-size: 12px;
+}
+
+.wg-grocy-stock .gs-target {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: auto 0 0;
+  padding-top: 6px;
+  border-top: 1px solid var(--line, #1c1c1c);
+  color: var(--text-secondary, #a3a3a3);
+  font-size: 13px;
+}
+
+.wg-grocy-stock .gs[data-status="expired"] .gs-target__glyph,
+.wg-grocy-stock .gs[data-status="expired"] .gs-target__text {
+  color: var(--gs-expired);
+}
+
+.wg-grocy-stock .gs[data-status="soon"] .gs-target__glyph {
+  color: var(--gs-soon);
+}
+
+.wg-grocy-stock .gs[data-status="ok"] .gs-target__glyph {
+  color: var(--gs-ok);
+}
+
+/* Kein Wert: leerer Zustand, klar als solcher lesbar. */
+.wg-grocy-stock .gs[data-mode="empty"] .gs-value {
+  color: var(--text-secondary, #a3a3a3);
+}
+
+/* Cache/Ausfall: Wert bleibt sichtbar, aber gedaempft. */
+.wg-grocy-stock .gs[data-mode="degraded"] .gs-value,
+.wg-grocy-stock .gs[data-mode="degraded"] .gs-list {
+  opacity: 0.7;
+}
