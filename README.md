@@ -157,6 +157,13 @@ das verbindliche Payload-Schema (G.5) und schreibt sie nach `garmin_cache` —
   Auth/401 → genau ein Log-Eintrag, dann bis zum nächsten Intervall (kein Hammering).
 - Ohne Credentials/Token startet der Container und loggt verständlich, ohne Crash.
 - Der einmalige Garmin-Login inkl. MFA ist Auftraggeber-Setup (L.3.3, `docs/setup.md`).
+  Beim Erst-Login muss das Token-Verzeichnis mitgegeben werden, damit die Session
+  im Volume `garmin-token` landet und der Sync danach unbeaufsichtigt läuft:
+
+  ```bash
+  docker compose run --rm garmin-sync python -c \
+    "from garminconnect import Garmin; import os; g=Garmin(os.environ['GARMIN_EMAIL'], os.environ['GARMIN_PASSWORD']); g.login(os.environ['GARMIN_TOKEN_DIR']); print('login ok')"
+  ```
 
 ```bash
 # Tests (Payload-Schema G.5, Backoff/Auth, No-Credentials-Pfad)
