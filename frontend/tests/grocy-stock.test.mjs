@@ -8,18 +8,17 @@
  *   - Sortierung nach frühestem MHD, Produkte ohne MHD zuletzt
  *   - Ziel-Zeile: abgelaufen / bald fällig, als Glyphe UND Text (I.2)
  *   - leere `products`-Liste -> leerer Zustand (kein Fehler), Wert "—"
- *   - `GROCY_UNAVAILABLE` -> kein "data"-Zustand, kein Crash
+ *   - `GROCY_UNAVAILABLE` ohne Vorwert -> leerer Zustand ("—"), NICHT "0"
+ *   - `GROCY_UNAVAILABLE` nach erfolgreichem Abruf -> zuletzt bekannter Bestand
+ *     bleibt sichtbar, als „Quelle nicht erreichbar" gekennzeichnet
  *   - Netzfehler ohne Vorwert -> leerer Zustand, kein Crash
  *   - reine Helfer (Fenster, Limit, Klassifikation, Format, Normalisierung)
  *
- * HINWEIS (MARAAA-42): Der Fehlerpfad `GROCY_UNAVAILABLE` setzt `this.last` auf
- * `{items:[],fetchedAt:null}` zurück. Dadurch zeigt die Kachel "0" mit Status
- * "in Ordnung" statt eines leeren Zustands ("—") und verliert einen zuvor
- * geladenen Wert — das widerspricht der README-Absicht („zuletzt bekannter
- * Wert ... oder leerer Zustand"). Diese Suite prüft daher nur die belastbaren
- * Invarianten (kein "data"-Zustand, Kontext „nicht erreichbar", kein Crash) und
- * schreibt den Fehler nicht als Sollzustand fest; der Befund ist als
- * Folge-Issue **MARAAA-45** gemeldet.
+ * FEHLERPFAD (MARAAA-45): Bei `GROCY_UNAVAILABLE` behält `refresh()` den zuletzt
+ * bekannten Bestand (`this.last`) und markiert ihn über `degraded` als
+ * „Quelle nicht erreichbar" (Modus "degraded", Wert gedämpft). Ohne Vorwert
+ * bleibt `last === null` -> leerer Zustand ("—", „Kein Bestand"). Ein erfundenes
+ * "0"/„in Ordnung" darf nie erscheinen. Vorbild: `mealie-mealplan`/`weather`.
  *
  * Lauf: `npm test` im Ordner `frontend/` (`node --test tests/`).
  */
@@ -194,17 +193,54 @@ test("leere products-Liste ist kein Fehler (leerer Zustand)", async (t) => {
   assert.match(collectText(widget.listEl).join(" "), /Kein Bestand im Cache/);
 });
 
-test("GROCY_UNAVAILABLE -> kein data-Zustand, kein Crash", async (t) => {
+test("GROCY_UNAVAILABLE ohne Vorwert -> leerer Zustand ('—'), nicht '0' (Kriterium 2)", async (t) => {
   const { widget } = makeWidget(t, {
     fetchJson: async () => ({ error_code: "GROCY_UNAVAILABLE" }),
   });
   await widget.render();
   await widget.refresh(); // darf nicht werfen
 
-  // Nicht als frisch darstellen und den Ausfall benennen (I.2/E.3).
-  assert.notEqual(widget.root.dataset.mode, "data");
+  // Kein erfundener Wert: leerer Zustand statt "0"/„in Ordnung" (I.2/E.3).
+  assert.equal(widget.root.dataset.mode, "empty");
+  assert.equal(widget.root.dataset.status, "unknown");
+  assert.equal(widget.valueEl.textContent, "—");
+  assert.notEqual(widget.valueEl.textContent, "0");
+  assert.equal(widget.subEl.textContent, "Daten nicht erreichbar");
   assert.match(widget.contextEl.textContent, /nicht erreichbar/);
   assert.match(collectText(widget.listEl).join(" "), /Daten nicht erreichbar/);
+});
+
+test("GROCY_UNAVAILABLE nach erfolgreichem Abruf -> letzter Bestand bleibt, gekennzeichnet (Kriterium 1)", async (t) => {
+  let available = true;
+  const { widget } = makeWidget(t, {
+    fetchJson: async () =>
+      available ? PAYLOAD : { error_code: "GROCY_UNAVAILABLE" },
+  });
+  await widget.render();
+  await widget.refresh();
+  assert.equal(widget.root.dataset.mode, "data");
+  assert.equal(widget.valueEl.textContent, "4");
+
+  available = false;
+  await widget.refresh(); // darf nicht werfen
+
+  // Letzter bekannter Bestand bleibt erhalten (kein Datenverlust, keine "0").
+  assert.equal(widget.root.dataset.mode, "degraded");
+  assert.equal(widget.valueEl.textContent, "4");
+  assert.notEqual(widget.valueEl.textContent, "0");
+  assert.equal(widget.subEl.textContent, "Produkte im Bestand");
+  assert.deepEqual(itemTitles(widget), ["Joghurt", "Brot", "Milch", "Reis"]);
+
+  // Der Status stammt aus dem echten letzten Bestand (nicht erfundenes "ok")
+  // und der Ausfall wird benannt (I.2/E.3).
+  assert.equal(widget.root.dataset.status, "expired");
+  assert.match(widget.contextEl.textContent, /Quelle nicht erreichbar/);
+
+  // Erholung: wieder erreichbar -> frischer Zustand, Ausfall-Kennzeichnung weg.
+  available = true;
+  await widget.refresh();
+  assert.equal(widget.root.dataset.mode, "data");
+  assert.doesNotMatch(widget.contextEl.textContent, /nicht erreichbar/);
 });
 
 test("Netzfehler ohne Vorwert -> leerer Zustand, kein Crash", async (t) => {

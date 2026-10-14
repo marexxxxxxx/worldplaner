@@ -247,18 +247,25 @@ export default class GrocyStockWidget {
     }
 
     if (fetchFailed) {
-      this.degraded = true;
+      this.degraded = true; // letzten bekannten Wert behalten
     } else {
       const result = readStock(payload);
-      this.lastError = result.errorCode;
-      this.degraded = !result.recovered;
-      // Leerer Bestand ist kein Fehler (Kriterium 4): kein Wert -> leerer
-      // Zustand ("—") statt "0 Produkte". Ein ungueltiger Abruf (recovered
-      // false) behaelt den Fehler-/stale-Pfad.
-      this.last =
-        result.recovered && result.items.length === 0
-          ? null
-          : { items: result.items, fetchedAt: result.fetchedAt };
+      if (result.recovered) {
+        this.degraded = false;
+        this.lastError = null;
+        // Leerer Bestand ist kein Fehler (Kriterium 3): kein Wert -> leerer
+        // Zustand ("—") statt "0 Produkte".
+        this.last =
+          result.items.length === 0
+            ? null
+            : { items: result.items, fetchedAt: result.fetchedAt };
+      } else {
+        // Nicht erreichbar (Kriterium 1/2): den zuletzt bekannten Bestand
+        // behalten und als Quelldefekt kennzeichnen; ohne Vorwert bleibt
+        // `last === null` -> leerer Zustand ("—", kein erfundenes "0").
+        this.degraded = true;
+        this.lastError = result.errorCode || "GROCY_UNAVAILABLE";
+      }
     }
     this.renderValue();
   }
