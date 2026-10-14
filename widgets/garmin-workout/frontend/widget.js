@@ -252,7 +252,14 @@ export default class GarminWorkoutWidget {
       const result = readWorkouts(payload);
       this.lastError = null;
       this.degraded = !result.recovered;
-      this.last = { items: result.items, stale: result.stale };
+      // Leerer Cache ist kein Fehler (E.3): keine Einträge -> leerer Zustand
+      // ("—", ``data-mode="empty"``) statt ``stale`` mit Wert ``0``. Eine
+      // nicht-leere Liste bleibt auch bei ``stale:true`` sichtbar; ein
+      // ungültiger Abruf (``recovered:false``) behält den Fehler-/stale-Pfad.
+      this.last =
+        result.recovered && result.items.length === 0
+          ? null
+          : { items: result.items, stale: result.stale };
     }
     this.renderValue();
   }
@@ -309,6 +316,7 @@ export default class GarminWorkoutWidget {
     );
   }
 
+  /** "data" (frisch) | "stale" (Cache/Ausfall) | "empty" (kein Wert). */
   viewMode(last) {
     if (!last) {
       return "empty";
