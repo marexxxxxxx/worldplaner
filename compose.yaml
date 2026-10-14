@@ -1,0 +1,25 @@
+# Spezifikation H.1 nennt drei Services (backend, garmin-sync, mcp-server).
+# In K1 (WP-2) ist nur `backend` im Umfang; `garmin-sync/` und `mcp-server/`
+# existieren noch nicht (WP-5/WP-8) und wuerden den Build brechen. Dieser
+# Compose-Stand enthaelt daher ausschliesslich `backend`.
+
+services:
+  backend:
+    build: ./backend
+    restart: unless-stopped
+    ports: ["127.0.0.1:${BACKEND_PORT:-8000}:8000"]
+    volumes:
+      - sqlite-data:/data
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      - SQLITE_PATH=/data/dashboard.db
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+volumes:
+  sqlite-data:
